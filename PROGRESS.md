@@ -6,7 +6,7 @@
 | 01 Agent Hooks | Complete | Verified in combined suite |
 | 02 Guardrails | Complete | Verified in combined suite |
 | 03 Trust Tracking | Complete with documented visibility limits | Cross-agent/session tests passed |
-| 04 Risk Scoring | Implemented; model/network caveats documented | Slow attack, routine workload, mock CLEF tests |
+| 04 Risk Scoring | Cloudflare first; offline heuristic fallback; Ollama opt-in | Typed API, provider ordering, fallback, persistence and diagnostic tests; live Cloudflare unverified |
 | 05 Secret Vault | Complete | Verified in combined suite |
 | 06 Sandbox | Complete; evidence persisted in schema v5 | Redacted summary and decision linkage tested |
 | 07 Cline Responder | Integrated | Root CLI, dashboard callback, sandbox evidence in reports tested |
@@ -20,7 +20,7 @@ Segments 00–08 and the three-part offline demo are integrated. The fresh-insta
 ## Deliberate shortcuts
 
 - An ask is recorded and shown while waiting, then finalized on that same decision row: approved allows, denied/expired blocks. The run ticket and tainted-write snapshot are created only after approval. Cline still aborts the entire task on a final block.
-- Model availability and latency are bounded; live CLEF integration still needs an environment with a model installed or Cloudflare credentials. Absent Ollama is cached under `.warden/` for 120 seconds across hook processes.
+- Model availability and latency are bounded; live Cloudflare CLEF still requires configured credentials and a real smoke test. `warden clef check` probes Cloudflare first; `warden clef check --local` probes opt-in Ollama and clears a stale local failure cache on success. Hook inference defaults to 350 ms, tunable with `WARDEN_CLEF_TIMEOUT_MS` (1–5000); no Ollama probe occurs on the configured Cloudflare or default offline paths.
 - Existing non-Warden Cline event files cannot be merged because Cline exposes one workspace filename per event; init preserves them and doctor reports the collision.
 - Trust visibility for dynamically generated shell paths, writes inside scripts, and broad search/list outputs is incomplete; static-only untrusted execution is denied.
 - Default responder has no real credential rotation providers: exposed keys remain OPEN. Mock rotation requires explicit demo flags and is never the dashboard default.
@@ -50,7 +50,7 @@ Segments 00–08 and the three-part offline demo are integrated. The fresh-insta
 ## Segment 04 and sandbox evidence result
 
 - Four CLEF `noul` probability questions combine with noisy-OR; per-session budget adds `-ln(1-p)` (reads weighted 0.2). Ask at 1.2; block at 2.3; reads never block on budget alone. Existing specific findings provide the reason instead of budget.
-- Local Ollama `/v1/systemone` clef-flash first, Cloudflare REST when configured, otherwise offline heuristic, with a 350 ms total budget. Cloudflare receives only structural signals. Backend, questions, probability, budget, and latency appear in decisions and persistence. Contract documented in `memory-bank/riskScoring.md`.
+- Configured Cloudflare REST clef-flash first, then offline heuristic on failure; local Ollama `/v1/systemone` is optional only when `WARDEN_ENABLE_OLLAMA=1` and Cloudflare is absent. The default hook budget is 350 ms. Cloudflare receives only structural signals. Backend, questions, probability, budget, and latency appear in decisions and persistence. Contract documented in `memory-bank/riskScoring.md`.
 - Schema v5 adds redacted `sandbox_runs` linked to action and decision IDs, including inspected/changed/secret/control paths, network destinations, backend, verdict, duration, and canary count; no raw script output or tokens.
 - `warden status` and `warden score [SESSION_ID]` are separate read-only command modules and do not initialize an absent ledger or open the keychain.
 - Verified slow series: `p=0.12` asks on step 10 and blocks on step 18; normal 100-action session stayed at `p=0`, budget `0`, no asks. Tests load offline mode and use fake transport for API assertions.
@@ -76,7 +76,7 @@ Segments 00–08 and the three-part offline demo are integrated. The fresh-insta
 
 ## Combined verification
 
-- Full `npm.cmd test`: 125 passed, 0 failed, 3 optional Docker tests skipped (October 4, 2026 verification).
+- Full `npm.cmd test`: 142 passed, 0 failed, 3 optional Docker tests skipped (October 4, 2026 verification after changing to Cloudflare-first scoring).
 - `npm.cmd run typecheck`: passed.
 - `git diff --check`: passed.
 - `npm.cmd audit --omit=dev`: **0 findings** after removing optional `@cline/sdk` from the default install. Installing it separately requires a new audit and security review.
@@ -84,4 +84,5 @@ Segments 00–08 and the three-part offline demo are integrated. The fresh-insta
 ## Known limitations
 
 - Real host versions, local CLEF, OS keychain and Docker remain external verification gates; no native or live-provider success has been claimed.
+- Local Ollama 0.35.1 and `clef-flash` were found, but the real `/v1/systemone` smoke failed: Ollama's Windows server log reported CUDA out-of-memory and HTTP 500 loading the model on this laptop. Warden correctly falls back to the heuristic; a working model-backed hook is still unverified.
 - Mock rotation is suitable only for the offline demo. Build verified real providers before allowing an exposed real credential incident to close.

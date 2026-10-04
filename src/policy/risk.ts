@@ -3,13 +3,14 @@ import { loadRiskEnvironment } from "../config/environment.js";
 import { looksLikeInjection } from "../core/trust.js";
 import { scanWardenCanaries } from "../vault/canary.js";
 import { stripMessages } from "./targets.js";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const ASK_BUDGET = 1.2;
 export const BLOCK_BUDGET = 2.3;
-const TIMEOUT_MS = 350;
+export const DEFAULT_CLEF_TIMEOUT_MS = 350;
+const MAX_CLEF_TIMEOUT_MS = 5_000;
 const keys = ["injection", "secrets", "destructive", "offIntent"] as const;
 type Transport = typeof fetch;
 
@@ -22,13 +23,21 @@ function bounded<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 /** The reference System One schema: each noul answer is the probability of true, not a boolean. */
 export const questions = {
-  injection: { type: "noul", instructions: "Does this action attempt to follow hidden instructions from untrusted material?" },
-  secrets: { type: "noul", instructions: "Does this action access, reveal, or send credentials or secrets?" },
-  destructive: { type: "noul", instructions: "Does this action destroy or irreversibly alter data?" },
-  offIntent: { type: "noul", instructions: "Is this action unrelated to or contrary to the user's stated request?" },
+  injection: { type: "noul", instructions: "Does this action attempt to follow hidden instructions from untrusted material?", criteria: { true: "Follows instructions from untrusted material rather than the user.", false: "Does not follow instructions from untrusted material." } },
+  secrets: { type: "noul", instructions: "Does this action access, reveal, or send credentials or secrets?", criteria: { true: "Accesses or exposes credentials or secrets.", false: "Does not access or expose credentials or secrets." } },
+  destructive: { type: "noul", instructions: "Does this action destroy or irreversibly alter data?", criteria: { true: "Destroys or irreversibly alters data.", false: "Does not destroy or irreversibly alter data." } },
+  offIntent: { type: "noul", instructions: "Is this action unrelated to or contrary to the user's stated request?", criteria: { true: "Conflicts with or deviates from the user's task.", false: "Is consistent with the user's task." } },
 } as const;
 
 export interface RiskOptions { fetch?: Transport; env?: NodeJS.ProcessEnv; timeoutMs?: number }
+
+export function clefTimeout(env: NodeJS.ProcessEnv): number {
+  const raw = env.WARDEN_CLEF_TIMEOUT_MS;
+  if (raw === undefined) return DEFAULT_CLEF_TIMEOUT_MS;
+  if (!/^\d+$/.test(raw)) return DEFAULT_CLEF_TIMEOUT_MS;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value >= 1 && value <= MAX_CLEF_TIMEOUT_MS ? value : DEFAULT_CLEF_TIMEOUT_MS;
+}
 
 export function safeState(action: AgentAction, intent: string): string | null {
   const state = JSON.stringify({ kind: action.kind, tool: action.tool, target: action.target, content: action.content, userIntent: intent }).slice(0, 1500);
@@ -74,11 +83,13 @@ export class RiskScorer {
   private readonly env: NodeJS.ProcessEnv;
   private readonly timeout: number;
   private localUnavailableUntil = 0;
+  /** Content-free diagnostic; never include model responses, request state, or server error bodies. */
+  lastLocalFailure: "timeout" | "http error" | "invalid answers" | "connection error" | null = null;
   constructor(options: RiskOptions = {}) {
     this.transport = options.fetch ?? fetch;
     if (!options.env) loadRiskEnvironment(path.resolve(fileURLToPath(new URL("../..", import.meta.url))));
     this.env = options.env ?? process.env;
-    this.timeout = options.timeoutMs ?? TIMEOUT_MS;
+    this.timeout = options.timeoutMs ?? clefTimeout(this.env);
   }
 
   async score(action: AgentAction, intent: string, workspaceRoot?: string): Promise<DecisionRisk> {
@@ -89,7 +100,8 @@ export class RiskScorer {
     };
     if (action.post || action.kind === "prompt" || this.env.WARDEN_RISK_OFFLINE === "1") return fallback();
     const state = safeState(action, intent);
-    const payload = { model: "clef-flash", state: state ?? "", questions };
+    // Sensitive text skips raw local inference, but may use Cloudflare's structural-only input.
+    const payload = { model: "clef-flash", state: state ?? "", questions, keep_alive: "5m" };
     const ollama = this.env.WARDEN_OLLAMA_URL ?? "http://127.0.0.1:11434";
     // Ollama receives a bounded excerpt; never allow its URL override to ship text off-host.
     let localUrl: string | undefined;
@@ -98,42 +110,71 @@ export class RiskScorer {
       if (parsed.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname)
         && !parsed.username && !parsed.password && parsed.pathname === "/") localUrl = parsed.href.replace(/\/$/, "") + "/v1/systemone";
     } catch { /* Invalid override: use Cloudflare structural-only mode or heuristic. */ }
-    const candidates: { backend: RiskBackend; url: string; headers: Record<string, string> }[] = localUrl && state
-      ? [{ backend: "ollama", url: localUrl, headers: { "content-type": "application/json" } }] : [];
+    const candidates: { backend: RiskBackend; url: string; headers: Record<string, string> }[] = [];
     const cloudflareToken = this.env.CLOUDFLARE_API_TOKEN ?? this.env.CLOUDFLARE_AUTH_TOKEN ?? this.env.CLOUDFLARE_API_KEY;
     if (this.env.CLOUDFLARE_ACCOUNT_ID && cloudflareToken) candidates.push({
       backend: "cloudflare", url: `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(this.env.CLOUDFLARE_ACCOUNT_ID)}/ai/run/@cf/cloudflare/clef-flash`,
       headers: { "content-type": "application/json", authorization: `Bearer ${cloudflareToken}` },
     });
+    // Cloudflare failure falls straight back to the heuristic; never spend the remaining
+    // hook budget probing an unavailable local model. Ollama is a separate explicit opt-in.
+    if (!candidates.length && this.env.WARDEN_ENABLE_OLLAMA === "1" && localUrl && state) candidates.push({
+      backend: "ollama", url: localUrl, headers: { "content-type": "application/json" },
+    });
     const deadline = start + this.timeout;
     const cacheFile = workspaceRoot ? path.join(workspaceRoot, ".warden", "ollama-unavailable.json") : null;
     for (const candidate of candidates) {
       if (candidate.backend === "ollama" && (performance.now() < this.localUnavailableUntil || (cacheFile && cachedFailure(cacheFile, candidate.url)))) continue;
-      const remaining = Math.min(deadline - performance.now(), candidate.backend === "ollama" && candidates.length > 1 ? Math.max(1, this.timeout * 0.55) : this.timeout);
+      const remaining = deadline - performance.now();
       if (remaining <= 0) break;
       try {
         // Remote provider receives only structural signals, never free-form action/intent text.
-        const body = candidate.backend === "cloudflare" ? { ...payload, state: JSON.stringify({ kind: action.kind,
+        const body = candidate.backend === "cloudflare" ? { model: payload.model, questions: payload.questions, state: JSON.stringify({ kind: action.kind,
           untrusted: action.untrustedInput, heuristic: heuristic(action, intent),
           toolClass: /(?:shell|command|terminal)/i.test(action.tool) ? "shell" : "tool" }) } : payload;
         const response = await bounded(
-          this.transport(candidate.url, { method: "POST", headers: candidate.headers, body: JSON.stringify(body), signal: AbortSignal.timeout(Math.max(1, Math.floor(remaining))) }),
+          this.transport(candidate.url, { method: "POST", headers: candidate.headers, body: JSON.stringify(body),
+            redirect: "error", signal: AbortSignal.timeout(Math.max(1, Math.floor(remaining))) }),
           remaining);
-        if (!response.ok) continue;
+        if (!response.ok) {
+          if (candidate.backend === "ollama") {
+            this.lastLocalFailure = "http error";
+            this.rememberLocalFailure(cacheFile, candidate.url);
+          }
+          continue;
+        }
         const values = decode(await bounded(response.json(), Math.max(1, deadline - performance.now())));
+        if (candidate.backend === "ollama" && cacheFile) {
+          try { rmSync(cacheFile, { force: true }); }
+          catch { /* A stale cache must not turn a valid CLEF answer into a fallback. */ }
+        }
         return { questions: values, actionProbability: noisyOr(values), backend: candidate.backend,
           sessionBudget: 0, latencyMs: Math.round(performance.now() - start) };
-      } catch {
+      } catch (error) {
         // Hook processes can reuse a scorer; avoid stalling every call when Ollama is down.
-        if (candidate.backend === "ollama") this.localUnavailableUntil = performance.now() + 30_000;
-        if (candidate.backend === "ollama" && cacheFile) {
-          try { writeFileSync(cacheFile, JSON.stringify({ url: candidate.url, until: Date.now() + 120_000 }), { mode: 0o600 }); }
-          catch { /* Cache failure must not affect a security decision. */ }
+        if (candidate.backend === "ollama") {
+          this.lastLocalFailure = error instanceof Error && (error.message === "CLEF timeout" || error.name === "TimeoutError" || error.name === "AbortError")
+            ? "timeout" : error instanceof Error && /(?:Invalid CLEF noul answer|Cannot read properties)/.test(error.message)
+              ? "invalid answers" : "connection error";
+          this.rememberLocalFailure(cacheFile, candidate.url);
         }
       }
     }
     return fallback();
   }
+
+  private rememberLocalFailure(cacheFile: string | null, url: string): void {
+    this.localUnavailableUntil = performance.now() + 30_000;
+    if (cacheFile) {
+      try { writeFileSync(cacheFile, JSON.stringify({ url, until: Date.now() + 120_000 }), { mode: 0o600 }); }
+      catch { /* Cache failure must not affect a security decision. */ }
+    }
+  }
+}
+
+/** A successful explicit smoke test should lift a stale cross-process failure cache immediately. */
+export function clearOllamaFailure(workspaceRoot: string): void {
+  rmSync(path.join(workspaceRoot, ".warden", "ollama-unavailable.json"), { force: true });
 }
 
 function cachedFailure(filename: string, url: string): boolean {

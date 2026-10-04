@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseWardenRunArgv } from "./args.js";
 import { status } from "./status.js";
 import { score } from "./score.js";
+import { checkClef } from "./clef.js";
 import { dashboard } from "./dashboard.js";
 import { runRespondCli } from "./respond.js";
 import { wardenStatePath } from "../core/paths.js";
@@ -47,6 +48,13 @@ export async function runCli(
     if (rest.length || subcommand?.startsWith("-")) throw new Error("Usage: warden score [SESSION_ID]");
     io.stdout.write(score(root, subcommand));
     return 0;
+  }
+  if (command === "clef") {
+    if (subcommand !== "check" || rest.length > 1 || (rest[0] && rest[0] !== "--local"))
+      throw new Error("Usage: warden clef check [--local]");
+    const result = await checkClef({}, root, rest[0] === "--local" ? "ollama" : "cloudflare");
+    io.stdout.write(`${result.message}\n`);
+    return result.ok ? 0 : 1;
   }
   if (command === "dashboard") {
     if (subcommand || rest.length) throw new Error("Usage: warden dashboard");
@@ -147,7 +155,7 @@ export async function runCli(
       });
     }
 
-    throw new Error("Usage: warden <init|uninstall|doctor|status|score|dashboard|respond|trust review-file|vault add|seed|list|run>");
+    throw new Error("Usage: warden <init|uninstall|doctor|status|score|clef check|dashboard|respond|trust review-file|vault add|seed|list|run>");
   } finally {
     context.close();
   }

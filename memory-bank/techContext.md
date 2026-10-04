@@ -65,6 +65,8 @@ Every optional integration requires an offline fallback.
 
 Cloudflare configuration uses `CLOUDFLARE_ACCOUNT_ID` plus a scoped bearer `CLOUDFLARE_API_TOKEN`. The Warden package-root `.env` is parsed through an allowlist; explicit process values take precedence. `CLOUDFLARE_API_KEY` is supported only as a bearer-token alias, not as the legacy Global API Key.
 
+Risk-provider priority: configured Cloudflare CLEF, then offline heuristic; a Cloudflare failure never probes Ollama. Without configured Cloudflare, the heuristic runs immediately unless `WARDEN_ENABLE_OLLAMA=1` explicitly enables local Ollama, which itself falls back to the heuristic. `warden clef check` tests configured Cloudflare; `warden clef check --local` probes local Ollama only.
+
 ## Vault implementation
 
 - `@napi-rs/keyring` 2.1.0 is installed as a runtime dependency.
@@ -87,6 +89,7 @@ npm.cmd run warden -- vault seed [.env]
 npm.cmd run warden -- vault list
 npm.cmd run warden -- status
 npm.cmd run warden -- score [SESSION_ID]
+npm.cmd run warden -- clef check [--local]
 npm.cmd run warden -- dashboard
 npm.cmd run warden -- respond --session <ID> [--deterministic]
 npm.cmd run warden -- trust review-file <PATH> # interactive local terminal only

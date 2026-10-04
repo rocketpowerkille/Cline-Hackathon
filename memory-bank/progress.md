@@ -10,7 +10,7 @@ Segments 00–08 and all three offline demo parts are integrated. Fresh-install 
 - [x] Segment 01 — Agent Hooks
 - [x] Segment 02 — Guardrails
 - [x] Segment 03 — Trust Tracking (known shell/file visibility limitations)
-- [x] Segment 04 — Risk Scoring (live model integration not exercised)
+- [x] Segment 04 — Risk Scoring (typed local CLEF request, diagnostic CLI, and persistence tested; live model not exercised)
 - [x] Segment 05 — Secret Vault
 - [x] Segment 06 — Sandbox (schema-v5 evidence persistence)
 - [x] Segment 07 — Cline Responder (root CLI/dashboard callback and sandbox evidence integrated)
@@ -29,7 +29,7 @@ Segments 00–08 and all three offline demo parts are integrated. Fresh-install 
 - Tainted writes preserve the original baseline or record a newly created file for responder recovery.
 - Secret vault, canary blocking, single-use run tickets, and selective child-process injection work without storing values in SQLite.
 - Guardrail sandbox findings invoke static/optional Docker shadow execution.
-- Risk answers combine through noisy-OR into a per-session cumulative budget, with Ollama/Cloudflare/heuristic backends and bounded fallback.
+- Risk answers combine through noisy-OR into a per-session cumulative budget; configured Cloudflare runs first, failure goes straight to the offline heuristic, and Ollama is optional only with explicit opt-in when Cloudflare is absent.
 - Cloudflare credentials can be supplied through an allowlisted Warden package-root `.env` using account ID plus scoped bearer API token.
 - Sandbox summaries linked to actions and decisions persist in `sandbox_runs`; `warden status` and `warden score` are read-only commands.
 - `warden init`, doctor, and uninstall pass real CLI-process tests in temporary repositories.
@@ -57,7 +57,7 @@ Segments 00–08 and all three offline demo parts are integrated. Fresh-install 
 ## Mocks and shortcuts
 
 - An `ask` is recorded, waits for the dashboard (20-second maximum), then finalizes to allow/block before the host receives a verdict. No-dashboard denies immediately.
-- CLEF model requests are tested with fakes; no live Ollama/Cloudflare evaluation or calibration was done. See `riskScoring.md`.
+- CLEF model requests, persisted engine results, provider-specific diagnostic CLI, real in-process loopback HTTP transport, timeout configuration and fallback are tested without external network access; no live Ollama/Cloudflare evaluation or calibration was done. `warden clef check` requires configured Cloudflare credentials; `warden clef check --local` requires a working local model. See `riskScoring.md`.
 - Existing Cline hook files are preserved rather than composed.
 - Automated tests use an in-memory secret store; native keychain needs manual smoke tests.
 - Docker tests require a running Docker daemon and cached image; the current local suite skips three cases. Static-only untrusted executable code is denied, not cleared.
@@ -83,7 +83,7 @@ Segments 00–08 and all three offline demo parts are integrated. Fresh-install 
 
 ## Verification
 
-- Full `npm.cmd test`: 125 passed, 0 failed, 3 optional Docker skips (October 4, 2026 verification).
+- Full `npm.cmd test`: 142 passed, 0 failed, 3 optional Docker skips (October 4, 2026 after changing to Cloudflare-first scoring).
 - `npm.cmd run typecheck`: passed.
 - `git diff --check`: passed.
 - `npm.cmd audit --omit=dev`: **0 findings** after removing optional `@cline/sdk` from default dependencies. The opt-in SDK must be audited separately before installation or production use.

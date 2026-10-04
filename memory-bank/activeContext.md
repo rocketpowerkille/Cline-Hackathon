@@ -15,8 +15,8 @@ Segments 00–08 and the three-part offline demo are integrated. Fresh-init obse
 
 ### Segment 04 and sandbox ledger
 
-- CLEF typed noul scores use Ollama `/v1/systemone` then Cloudflare Workers AI with 350 ms total timeout and offline fallback; remote state is structural only.
-- Cloudflare bearer credentials can be read from an allowlisted Warden package-root `.env`; use `CLOUDFLARE_ACCOUNT_ID` plus `CLOUDFLARE_API_TOKEN`.
+- CLEF typed noul scores use configured Cloudflare Workers AI first, then the offline heuristic on failure; absent credentials use the heuristic immediately. Local Ollama `/v1/systemone` is attempted only with `WARDEN_ENABLE_OLLAMA=1` and no configured Cloudflare. Cloudflare state is structural only. `warden clef check` is explicitly local-only and does not change normal provider priority; hooks honor bounded `WARDEN_CLEF_TIMEOUT_MS`.
+- Cloudflare bearer credentials can be read from an allowlisted Warden package-root `.env`; use `CLOUDFLARE_ACCOUNT_ID` plus `CLOUDFLARE_API_TOKEN`. `clef check` now tests Cloudflare by default; `clef check --local` never calls Cloudflare.
 - Noisy-OR risk and weighted cumulative budget use ask 1.2/block 2.3; reads accrue at 0.2 weight but never budget-block.
 - Decision backend, questions, p, budget, and latency are persisted; schema v5 adds `sandbox_runs` redacted summaries linked to actions and decisions.
 - Added `warden status` and `warden score [SESSION_ID]` separate modules; test preload forces offline mode.
@@ -91,7 +91,7 @@ Test real host hook timing, Docker shadow behavior, a live local CLEF model and 
 
 ## Verification
 
-- Full suite: 125 passed, 0 failed, 3 Docker-only skips (October 4, 2026); compiled hook/CLI production-only smoke test passed.
+- Full suite: 142 passed, 0 failed, 3 Docker-only skips (October 4, 2026 after changing to Cloudflare-first scoring); compiled hook/CLI production-only smoke test passed.
 - `npm.cmd run typecheck`: passed.
 - `git diff --check`: passed.
 - `npm.cmd audit --omit=dev`: 0 findings after removing the optional SDK from default dependencies. SDK installation needs separate audit.

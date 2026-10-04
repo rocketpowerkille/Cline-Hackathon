@@ -9,6 +9,7 @@ export const riskEnvironmentKeys = [
   "CLOUDFLARE_AUTH_TOKEN",
   "CLOUDFLARE_API_KEY",
   "WARDEN_OLLAMA_URL",
+  "WARDEN_ENABLE_OLLAMA",
   "WARDEN_RISK_OFFLINE",
   "WARDEN_DEMO_CLEF_TIMEOUT_MS",
 ] as const;
