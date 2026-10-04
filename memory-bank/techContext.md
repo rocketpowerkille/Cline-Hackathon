@@ -79,3 +79,51 @@ npm.cmd run warden -- run [--only NAME[,NAME...]] -- <command> [args...]
 - The installed `warden` bin points at `bin/warden.mjs`, which registers `tsx` and loads the TypeScript CLI.
 - `vault add` reads the value from hidden TTY input; non-interactive input may be piped over stdin.
 - `warden run` requires a live ticket issued by an allowed agent action.
+
+## Sandbox implementation
+
+- No new npm dependency is used; filesystem inspection and Docker invocation use Node's standard library.
+- Default cached image name: `node:22-alpine`, overridable with `WARDEN_SANDBOX_IMAGE`.
+- Docker readiness and image inspection use an allowlisted client environment.
+- Docker execution uses `--pull=never`, `--network none`, dropped capabilities, no-new-privileges, PID/memory/CPU limits, and a 5-second default timeout.
+- Docker tests skip when the daemon/image is unavailable; static fallback tests always run.
+- Current local state: Docker client is installed, but the Docker Desktop Linux daemon is not running.
+
+### Deferred sandbox persistence
+
+Add a shared `sandbox_runs` table during Engine integration:
+
+```text
+id INTEGER PRIMARY KEY
+action_id INTEGER NOT NULL REFERENCES actions(id)
+backend TEXT NOT NULL
+verdict TEXT NOT NULL
+reason TEXT NOT NULL
+labels_json TEXT NOT NULL
+changed_files_json TEXT NOT NULL
+secret_files_json TEXT NOT NULL
+canaries_json TEXT NOT NULL
+network_attempts_json TEXT NOT NULL
+control_files_json TEXT NOT NULL
+exit_code INTEGER
+timed_out INTEGER NOT NULL
+duration_ms INTEGER NOT NULL
+created_at TEXT NOT NULL
+```
+
+Do not store raw command output, copied source text, environment variables, or secret values. Add a prepared `WardenStore.recordSandboxRun(actionId, result, durationMs)` method rather than writing SQL from `src/sandbox/`.
+
+### Deferred Engine API change
+
+The live repository engine should construct dependencies approximately as:
+
+```text
+new Engine(store, {
+  workspaceRoot,
+  vault,
+  guardrails,
+  sandbox: shadowRun,
+})
+```
+
+The final shape may stay smaller, but `workspaceRoot` and the sandbox runner must be explicit and injectable.
