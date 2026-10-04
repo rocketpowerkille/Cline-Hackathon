@@ -10,6 +10,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "demo": "tsx demo/run-demo.ts",
     "warden": "tsx src/cli/warden.ts",
     "test": "node --import ./test/offline.mjs --import tsx --test test/**/*.test.ts",
     "typecheck": "tsc --noEmit"
