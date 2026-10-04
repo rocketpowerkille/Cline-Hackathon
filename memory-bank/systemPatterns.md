@@ -114,6 +114,7 @@ trust result
 ## Risk layer (Segment 04)
 
 - `src/policy/risk.ts` provides typed CLEF noul questions, noisy-OR probability, weighted budget increment, and short-timeout Ollama/Cloudflare/offline heuristic scoring; details and sources: `riskScoring.md`.
+- `src/config/environment.ts` loads only allowlisted risk-provider settings from the Warden package-root `.env`, preserving explicit process values and excluding application credentials.
 - Engine scores only non-post, non-prompt actions without higher-priority findings; reads count 0.2x and never block solely on risk. A generic budget reason is hidden by more specific findings. An absent Ollama is cached in `.warden/ollama-unavailable.json` for 120 seconds across hook processes.
 - Store persists `sessions.risk_budget` increments, `decisions.risk_latency_ms`, and the existing question/backend fields. Inference failure falls back to heuristic rather than failing open with an empty risk score.
 

@@ -63,6 +63,8 @@ On systems where PowerShell execution policy does not shadow npm, normal `npm` c
 
 Every optional integration requires an offline fallback.
 
+Cloudflare configuration uses `CLOUDFLARE_ACCOUNT_ID` plus a scoped bearer `CLOUDFLARE_API_TOKEN`. The Warden package-root `.env` is parsed through an allowlist; explicit process values take precedence. `CLOUDFLARE_API_KEY` is supported only as a bearer-token alias, not as the legacy Global API Key.
+
 ## Vault implementation
 
 - `@napi-rs/keyring` 2.1.0 is installed as a runtime dependency.

@@ -30,6 +30,7 @@ Segments 00–08 and all three offline demo parts are integrated. Fresh-install 
 - Secret vault, canary blocking, single-use run tickets, and selective child-process injection work without storing values in SQLite.
 - Guardrail sandbox findings invoke static/optional Docker shadow execution.
 - Risk answers combine through noisy-OR into a per-session cumulative budget, with Ollama/Cloudflare/heuristic backends and bounded fallback.
+- Cloudflare credentials can be supplied through an allowlisted Warden package-root `.env` using account ID plus scoped bearer API token.
 - Sandbox summaries linked to actions and decisions persist in `sandbox_runs`; `warden status` and `warden score` are read-only commands.
 - `warden init`, doctor, and uninstall pass real CLI-process tests in temporary repositories.
 - Generated Cline and Cursor wrappers pass JSON stdio process tests.
@@ -37,6 +38,7 @@ Segments 00–08 and all three offline demo parts are integrated. Fresh-install 
 - Deterministic responder and restricted two-session SDK flow are implemented and tested.
 - Local dashboard, approval waiter, security controls, and UI are implemented and tested.
 - Demo Parts 1–3 prove localhost exfiltration without Warden, zero attacker requests with Warden, and mock-backed rotation, restoration, and quarantine.
+- Configured interactive demo runs require persisted `cloudflare` scoring; the test preload still forces the heuristic and makes no network calls.
 
 ## Remaining work
 

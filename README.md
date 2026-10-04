@@ -34,6 +34,23 @@ Still requiring integration verification: real Cline/Cursor host sessions, live 
 - Cline and/or Cursor
 - Docker is optional
 
+## Optional Cloudflare Workers AI scoring
+
+Create a scoped Cloudflare API token with access to Workers AI, then copy the Warden configuration template:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Set both values in the Warden checkout's `.env`:
+
+```dotenv
+CLOUDFLARE_ACCOUNT_ID=your-account-id
+CLOUDFLARE_API_TOKEN=your-scoped-api-token
+```
+
+Warden calls `@cf/cloudflare/clef-flash` with `Authorization: Bearer`. Explicit process environment variables override `.env`. `CLOUDFLARE_AUTH_TOKEN` remains supported, and `CLOUDFLARE_API_KEY` is accepted as an alias only when it contains a scoped bearer API token. Do not put a legacy Cloudflare Global API Key there. Warden loads only allowlisted risk-provider settings and ignores unrelated application credentials.
+
 For a source checkout, install dependencies with `npm ci`. A compiled production-only runtime can be built with `npm run build` and installed with `npm ci --omit=dev`; it does not need `tsx`.
 
 ## Install Warden itself

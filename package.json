@@ -6,7 +6,7 @@
   "bin": {
     "warden": "./bin/warden.mjs"
   },
-  "files": ["bin/", "dist/", "README.md"],
+  "files": ["bin/", "dist/", "README.md", ".env.example"],
   "engines": {
     "node": ">=22.13.0"
   },

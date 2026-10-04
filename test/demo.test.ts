@@ -9,6 +9,7 @@ test("demo proves the leak, blocks it, and rotates/restores/quarantines offline"
   try {
     assert.deepEqual(result.unprotectedReceipts, ["npm_demo_FAKE_TOKEN_not_real_12345"]);
     assert.deepEqual(result.protectedReceipts, []);
+    assert.deepEqual(result.riskBackends, ["heuristic"]);
     assert.ok(result.trace.some((line) => line.startsWith("HOLD")));
     assert.ok(result.trace.some((line) => line.startsWith("BLOCK")));
     assert.deepEqual(result.recovery.exposedKeys, ["NPM_TOKEN"]);

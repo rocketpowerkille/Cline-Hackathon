@@ -10,6 +10,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Engine } from "../src/core/engine.js";
 import { runHook, type EngineFactory, type HookHost } from "../src/hooks/run.js";
 import { guardrails } from "../src/policy/guardrails.js";
+import { RiskScorer } from "../src/policy/risk.js";
 import { MockKeyProvider } from "../src/responder/providers.js";
 import { respondDeterministically } from "../src/responder/runbook.js";
 import { WardenStore } from "../src/store/database.js";
@@ -44,6 +45,7 @@ export interface DemoResult {
   protectedReceipts: string[];
   replayFile: string;
   trace: string[];
+  riskBackends: string[];
   recovery: {
     exposedKeys: string[];
     rotationCount: number;
@@ -122,11 +124,13 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
     let decision = latestDecision(demo.dbPath);
     riskBudget = decision.budget;
     assert.ok(decision.labels.includes("trust:injection-attempt"));
-    say("FLAG", "magenta", "CURSOR", "read GitHub issue #42", "hidden instruction; session untrusted");
+    demo.verifyBackend(decision.backend);
+    say("FLAG", "magenta", "CURSOR", "read GitHub issue #42", `hidden instruction; ${decision.backend}`);
 
     let output = await replayHook(steps.get("cursor-agents")!, protectedRoot, demo.normal);
     decision = latestDecision(demo.dbPath);
     riskBudget = decision.budget;
+    demo.verifyBackend(decision.backend);
     assert.equal(decision.verdict, "block");
     assert.ok(decision.labels.includes("approval:denied"));
     assert.equal(JSON.parse(output.stdout).permission, "deny");
@@ -136,6 +140,7 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
     output = await replayHook(steps.get("cursor-agents")!, protectedRoot, demo.approvedControlWrite);
     decision = latestDecision(demo.dbPath);
     riskBudget = decision.budget;
+    demo.verifyBackend(decision.backend);
     assert.equal(JSON.parse(output.stdout).permission, "allow");
     writeFileSync(path.join(protectedRoot, "AGENTS.md"), protectedReplay.files.agentsAfter, "utf8");
     say("ALLOW", "green", "CURSOR", "write AGENTS.md", "approved; tainted snapshot recorded");
@@ -143,6 +148,7 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
     output = await replayHook(steps.get("cursor-setup")!, protectedRoot, demo.approvedControlWrite);
     decision = latestDecision(demo.dbPath);
     riskBudget = decision.budget;
+    demo.verifyBackend(decision.backend);
     assert.equal(JSON.parse(output.stdout).permission, "allow");
     mkdirSync(path.join(protectedRoot, "scripts"), { recursive: true });
     writeFileSync(path.join(protectedRoot, "scripts", "setup.sh"), protectedReplay.files.setup, "utf8");
@@ -153,6 +159,7 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
     output = await replayHook(steps.get("cline-vault-whoami")!, protectedRoot, demo.normal);
     decision = latestDecision(demo.dbPath);
     riskBudget = decision.budget;
+    demo.verifyBackend(decision.backend);
     assert.equal(JSON.parse(output.stdout).cancel, false, "The scoped vault command must be allowed before the tainted read.");
     assert.ok(decision.labels.includes("vault:run-ticket"), "The hook must issue a command-bound vault ticket.");
     const reachedKey = demo.consumeWhoamiTicket();
@@ -212,6 +219,7 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
       protectedReceipts: [...attacker.receipts],
       replayFile,
       trace,
+      riskBackends: demo.backends(),
       protectedRoot,
       recovery: { exposedKeys: response.investigation.exposedKeys, rotationCount: npm.rotationCount("NPM_TOKEN"),
         oldRejected: rotation.oldRejected, agentsRestored, setupQuarantined: !!setupQuarantined,
@@ -230,9 +238,19 @@ function createDemoEngine(root: string): {
   approvedControlWrite: EngineFactory;
   seedEnv(): void;
   consumeWhoamiTicket(): string;
+  verifyBackend(backend: string): void;
+  backends(): string[];
 } {
   const dbPath = path.join(root, ".warden", "warden.db");
   const secrets = new MemorySecretStore();
+  const scoringEnvironment: NodeJS.ProcessEnv = { ...process.env, WARDEN_OLLAMA_URL: "https://disabled.invalid" };
+  const cloudflareConfigured = !!scoringEnvironment.CLOUDFLARE_ACCOUNT_ID
+    && !!(scoringEnvironment.CLOUDFLARE_API_TOKEN ?? scoringEnvironment.CLOUDFLARE_AUTH_TOKEN ?? scoringEnvironment.CLOUDFLARE_API_KEY);
+  const requireCloudflare = scoringEnvironment.WARDEN_RISK_OFFLINE !== "1" && cloudflareConfigured;
+  const configuredTimeout = Number(scoringEnvironment.WARDEN_DEMO_CLEF_TIMEOUT_MS ?? "10000");
+  const riskScorer = new RiskScorer({ env: scoringEnvironment,
+    timeoutMs: Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 10_000 });
+  const usedBackends = new Set<string>();
   const factory = (approveControl: boolean): EngineFactory => (workspaceRoot) => {
     const store = new WardenStore(dbPath);
     const vault = new SecretVault(workspaceRoot, store.database, secrets);
@@ -240,11 +258,12 @@ function createDemoEngine(root: string): {
       workspaceRoot,
       vault,
       ...(approveControl ? { approval: async () => ({ id: null, status: "approved" as const, reason: "Explicit demo-only approval." }) } : {}),
-      ...(approveControl ? {
-        stages: {
+      stages: {
+        risk: (action, intent) => riskScorer.score(action, intent, workspaceRoot),
+        ...(approveControl ? {
           guardrails: async (action, context) => (await guardrails(action, context)).filter((finding) => finding.label !== "control-file"),
-        },
-      } : {}),
+        } : {}),
+      },
     });
     return { decide: (action) => engine.decide(action), close: () => store.close() };
   };
@@ -252,6 +271,12 @@ function createDemoEngine(root: string): {
     dbPath,
     normal: factory(false),
     approvedControlWrite: factory(true),
+    verifyBackend(backend) {
+      if (backend !== "none") usedBackends.add(backend);
+      if (requireCloudflare && backend !== "none") assert.equal(backend, "cloudflare",
+        `Cloudflare CLEF was configured but the demo recorded ${backend}; increase WARDEN_DEMO_CLEF_TIMEOUT_MS or check the API token.`);
+    },
+    backends: () => [...usedBackends],
     consumeWhoamiTicket() {
       const store = new WardenStore(dbPath);
       try {
@@ -283,7 +308,7 @@ async function replayHook(step: ReplayStep, root: string, openEngine: EngineFact
     event: step.event,
     input: JSON.stringify(step.payload),
     cwd: root,
-    env: { ...process.env, CURSOR_PROJECT_DIR: root, WARDEN_RISK_OFFLINE: "1" },
+    env: { ...process.env, CURSOR_PROJECT_DIR: root },
     openEngine,
   });
 }
@@ -319,12 +344,13 @@ function resolveReplay(template: ReplayFile, root: string, attackerUrl: string):
   return replace(template) as ReplayFile;
 }
 
-function latestDecision(dbPath: string): { verdict: string; reason: string; labels: string[]; budget: number } {
+function latestDecision(dbPath: string): { verdict: string; reason: string; labels: string[]; budget: number; backend: string } {
   const store = new WardenStore(dbPath);
   try {
-    const row = store.database.prepare("SELECT verdict, reason, labels_json, session_budget FROM decisions ORDER BY id DESC LIMIT 1").get();
+    const row = store.database.prepare("SELECT verdict, reason, labels_json, session_budget, risk_backend FROM decisions ORDER BY id DESC LIMIT 1").get();
     if (!row) throw new Error("Demo decision ledger is empty");
-    return { verdict: String(row.verdict), reason: String(row.reason), labels: JSON.parse(String(row.labels_json)) as string[], budget: Number(row.session_budget) };
+    return { verdict: String(row.verdict), reason: String(row.reason), labels: JSON.parse(String(row.labels_json)) as string[],
+      budget: Number(row.session_budget), backend: String(row.risk_backend) };
   } finally {
     store.close();
   }

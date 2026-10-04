@@ -16,6 +16,7 @@ Segments 00–08 and the three-part offline demo are integrated. Fresh-init obse
 ### Segment 04 and sandbox ledger
 
 - CLEF typed noul scores use Ollama `/v1/systemone` then Cloudflare Workers AI with 350 ms total timeout and offline fallback; remote state is structural only.
+- Cloudflare bearer credentials can be read from an allowlisted Warden package-root `.env`; use `CLOUDFLARE_ACCOUNT_ID` plus `CLOUDFLARE_API_TOKEN`.
 - Noisy-OR risk and weighted cumulative budget use ask 1.2/block 2.3; reads accrue at 0.2 weight but never budget-block.
 - Decision backend, questions, p, budget, and latency are persisted; schema v5 adds `sandbox_runs` redacted summaries linked to actions and decisions.
 - Added `warden status` and `warden score [SESSION_ID]` separate modules; test preload forces offline mode.
@@ -56,6 +57,7 @@ Segments 00–08 and the three-part offline demo are integrated. Fresh-init obse
 - Added a fake failing Node repo, poisoned issue #42, localhost attacker, replay fixture, and colored trace.
 - Part 1 proves the fake token leaks without Warden.
 - Part 2 replays real Cursor/Cline payload shapes through `runHook`; Warden carries taint across days, sandboxes the script, blocks it, and sends nothing to the attacker. Part 3 rotates a **mock** key, verifies old-key rejection, restores the original `AGENTS.md`, quarantines the malicious script, and writes a report.
+- Configured interactive demo runs skip Ollama and require persisted `cloudflare` scoring within a 10-second demo-only timeout; automated tests remain offline.
 
 ## Current decisions
 

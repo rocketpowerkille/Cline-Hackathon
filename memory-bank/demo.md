@@ -28,6 +28,7 @@ On Windows the real shell script uses Git Bash when available; a Node fallback p
 
 - Uses `runHook()` for every action with current Cursor and Cline payload shapes.
 - Uses a temporary SQLite ledger and `MemorySecretStore`; the real OS keychain is never touched.
+- Interactive runs with Cloudflare credentials use a demo-owned scorer, skip the Ollama probe, allow up to 10 seconds by default, print the persisted backend, and fail if a scored action does not record `cloudflare`. Tests retain `WARDEN_RISK_OFFLINE=1` and deterministic heuristic scoring.
 - `.env` is vault-seeded into an in-memory store and rewritten to a canary.
 - Cursor's external issue result produces an injection flag and sticky session taint.
 - The first `AGENTS.md` write produces a control-file hold.

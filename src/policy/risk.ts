@@ -1,9 +1,11 @@
 import type { AgentAction, DecisionRisk, RiskBackend, RiskQuestions } from "../core/types.js";
+import { loadRiskEnvironment } from "../config/environment.js";
 import { looksLikeInjection } from "../core/trust.js";
 import { scanWardenCanaries } from "../vault/canary.js";
 import { stripMessages } from "./targets.js";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 export const ASK_BUDGET = 1.2;
 export const BLOCK_BUDGET = 2.3;
@@ -74,6 +76,7 @@ export class RiskScorer {
   private localUnavailableUntil = 0;
   constructor(options: RiskOptions = {}) {
     this.transport = options.fetch ?? fetch;
+    if (!options.env) loadRiskEnvironment(path.resolve(fileURLToPath(new URL("../..", import.meta.url))));
     this.env = options.env ?? process.env;
     this.timeout = options.timeoutMs ?? TIMEOUT_MS;
   }
@@ -86,8 +89,7 @@ export class RiskScorer {
     };
     if (action.post || action.kind === "prompt" || this.env.WARDEN_RISK_OFFLINE === "1") return fallback();
     const state = safeState(action, intent);
-    if (!state) return fallback();
-    const payload = { model: "clef-flash", state, questions };
+    const payload = { model: "clef-flash", state: state ?? "", questions };
     const ollama = this.env.WARDEN_OLLAMA_URL ?? "http://127.0.0.1:11434";
     // Ollama receives a bounded excerpt; never allow its URL override to ship text off-host.
     let localUrl: string | undefined;
@@ -96,11 +98,12 @@ export class RiskScorer {
       if (parsed.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname)
         && !parsed.username && !parsed.password && parsed.pathname === "/") localUrl = parsed.href.replace(/\/$/, "") + "/v1/systemone";
     } catch { /* Invalid override: use Cloudflare structural-only mode or heuristic. */ }
-    const candidates: { backend: RiskBackend; url: string; headers: Record<string, string> }[] = localUrl
+    const candidates: { backend: RiskBackend; url: string; headers: Record<string, string> }[] = localUrl && state
       ? [{ backend: "ollama", url: localUrl, headers: { "content-type": "application/json" } }] : [];
-    if (this.env.CLOUDFLARE_ACCOUNT_ID && (this.env.CLOUDFLARE_AUTH_TOKEN || this.env.CLOUDFLARE_API_TOKEN)) candidates.push({
+    const cloudflareToken = this.env.CLOUDFLARE_API_TOKEN ?? this.env.CLOUDFLARE_AUTH_TOKEN ?? this.env.CLOUDFLARE_API_KEY;
+    if (this.env.CLOUDFLARE_ACCOUNT_ID && cloudflareToken) candidates.push({
       backend: "cloudflare", url: `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(this.env.CLOUDFLARE_ACCOUNT_ID)}/ai/run/@cf/cloudflare/clef-flash`,
-      headers: { "content-type": "application/json", authorization: `Bearer ${this.env.CLOUDFLARE_AUTH_TOKEN ?? this.env.CLOUDFLARE_API_TOKEN}` },
+      headers: { "content-type": "application/json", authorization: `Bearer ${cloudflareToken}` },
     });
     const deadline = start + this.timeout;
     const cacheFile = workspaceRoot ? path.join(workspaceRoot, ".warden", "ollama-unavailable.json") : null;
