@@ -43,6 +43,9 @@ src/adapters/{common,cline,cursor}.ts
 - Secret storage is abstracted behind `SecretStore`; production uses the OS keychain and tests use memory.
 - SQLite stores vault names, canaries, source paths, and session grants, never real secret values.
 - `warden run` integration will call the vault's child-process launcher so secrets never enter the parent process environment.
+- Allowed `warden run` actions create a 30-second single-use ticket bound to session ID, exact child argv, and exact key selection.
+- The CLI consumes the ticket atomically; missing, expired, reused, mismatched, or ambiguous tickets fail closed.
+- Canary presence in outbound exec, net, write, or MCP content is an unconditional engine block before any run ticket is issued.
 
 ## Reliability patterns
 
@@ -52,3 +55,5 @@ src/adapters/{common,cline,cursor}.ts
 - Paths retain an original representation for logs and a canonical slash-separated representation for matching.
 - Tests use temporary or in-memory state and require no network or credentials.
 - Vault seeding resolves real paths and refuses environment files outside the protected repository.
+- Real values are read after ticket consumption and passed only in the child environment; SQLite stores key names only.
+- Exposure grants are recorded on the child `spawn` event, not before process creation succeeds.

@@ -2,7 +2,7 @@
 
 ## Current status
 
-Segments 00, 01, and the standalone portion of 05 are complete and verified together. Segment 02 is next.
+Segments 00, 01, and 05 are complete and verified together. Segment 02 is next.
 
 ## Milestones
 
@@ -11,7 +11,7 @@ Segments 00, 01, and the standalone portion of 05 are complete and verified toge
 - [ ] Segment 02 — Guardrails
 - [ ] Segment 03 — Trust Tracking
 - [ ] Segment 04 — Risk Scoring
-- [x] Segment 05 — Secret Vault (engine/schema/CLI integration pending)
+- [x] Segment 05 — Secret Vault
 - [ ] Segment 06 — Sandbox
 - [ ] Segment 07 — Cline Responder
 - [ ] Segment 08 — Dashboard + Install
@@ -32,10 +32,14 @@ Segments 00, 01, and the standalone portion of 05 are complete and verified toge
 - Session grants record injected key names without persisting values.
 - Child processes receive secrets without mutating the parent environment.
 - Environment files outside the protected repository are rejected.
+- Outbound canaries are blocked unconditionally for exec, net, write, and MCP actions.
+- Allowed `warden run` commands receive short-lived, single-use tickets attributed to the agent session.
+- `--only` limits the exact keys injected into the child process.
+- The CLI supports vault add, seed, list, and ticketed run commands.
 
 ## Remaining work
 
-Segments 02–04 and 06–08, CLI integration, offline demo, and Segment 05 engine/shared-schema wiring.
+Segments 02–04 and 06–08, remaining CLI commands, and the offline demo.
 
 ## Mocks and shortcuts
 
@@ -43,8 +47,8 @@ Segments 02–04 and 06–08, CLI integration, offline demo, and Segment 05 engi
 - Hook scripts and installer are deferred to Segment 08.
 - No Cline SDK plugin adapter yet; file hooks only.
 - Automated tests do not touch the real OS keychain.
-- Vault tables currently self-initialize rather than using the shared migration path.
-- Engine canary blocking and CLI argument handling are deferred.
+- The vault retains idempotent table creation for isolated tests even though tables are also in the shared schema.
+- Automated tests use memory storage; the native keychain needs one manual smoke test per platform.
 
 ## Known issues
 
@@ -60,10 +64,13 @@ Segments 02–04 and 06–08, CLI integration, offline demo, and Segment 05 engi
 - Hosts never resolve `ask`; all non-allow verdicts are cancel/deny at the adapter boundary.
 - `SecretStore` isolates OS keychain access from deterministic tests.
 - Canary format is `__WARDEN_CANARY__<NAME>__<24 hex>__`.
+- Run tickets bind session, exact child argv, and sorted `--only` selection for 30 seconds.
+- Ambiguous identical tickets fail closed to protect responder attribution.
 
 ## Verification
 
-- `npm.cmd test`: 29 passed, 0 failed.
+- `npm.cmd test`: 42 passed, 0 failed.
 - `npm.cmd run typecheck`: passed.
 - `git diff --check`: passed.
 - `npm.cmd audit --omit=dev`: 0 vulnerabilities.
+- Real CLI launcher smoke test passed.

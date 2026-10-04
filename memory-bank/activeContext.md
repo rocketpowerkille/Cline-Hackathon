@@ -2,7 +2,7 @@
 
 ## Current focus
 
-Segments 01 (Agent Hooks) and 05 (Secret Vault) are combined and verified on `segment-05-vault`. Segment 02 is next.
+Segments 01 (Agent Hooks) and 05 (Secret Vault) are combined and verified on `segment-05-vault`. Segment 05 wiring is complete; Segment 02 is next.
 
 ## Repository state
 
@@ -28,6 +28,10 @@ Segments 01 (Agent Hooks) and 05 (Secret Vault) are combined and verified on `se
 - Added `.env` seeding with randomized Warden canaries.
 - Added canary scanning, session grant records, and child-process-only secret injection.
 - Added repository containment checks for seeded environment files.
+- Added shared vault schema tables and single-use run tickets.
+- Added engine-level canary blocking for outbound exec, net, write, and MCP actions.
+- Added command-bound session attribution for `warden run`, including `--only` selection.
+- Added the initial dependency-free CLI and a JavaScript launcher that registers `tsx`.
 
 ## Current decisions
 
@@ -37,19 +41,24 @@ Segments 01 (Agent Hooks) and 05 (Secret Vault) are combined and verified on `se
 - Unknown tools map to `mcp`; pure chat/context tools bypass the engine.
 - Hook stderr never prints raw input.
 - Vault storage is behind `SecretStore`; production uses the OS keychain and tests use memory.
-- Vault tables currently self-initialize for isolation and should move into shared migrations during integration.
+- Vault tables live in the shared schema; `SecretVault` also creates them idempotently for isolated tests.
 - Automated tests never write to the developer's real keychain.
+- Run tickets expire after 30 seconds, are exact-command and exact-selection bound, and are consumed once.
+- Matching multiple live tickets is ambiguous and fails closed rather than guessing a session.
+- Grants are recorded only after the child emits its successful `spawn` event.
+- Vault `add` prompts through hidden TTY input; the value is never accepted as a command argument.
 
 ## Next step
 
-Proceed with Segment 02. Vault engine canary enforcement and CLI commands remain integration work.
+Proceed with Segment 02.
 
 ## Verification
 
-- `npm.cmd test`: 29 passed, 0 failed.
+- `npm.cmd test`: 42 passed, 0 failed.
 - `npm.cmd run typecheck`: passed.
 - `git diff --check`: passed.
 - `npm.cmd audit --omit=dev`: 0 vulnerabilities.
+- Real CLI launcher smoke test passed.
 
 ## Active risks
 

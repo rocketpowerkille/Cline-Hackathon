@@ -49,5 +49,34 @@ export const schema = `
     resolved_by TEXT
   );
 
-  PRAGMA user_version = 1;
+  CREATE TABLE IF NOT EXISTS vault_entries (
+    name TEXT PRIMARY KEY,
+    placeholder TEXT NOT NULL UNIQUE,
+    source_path TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS vault_grants (
+    id INTEGER PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    name TEXT NOT NULL REFERENCES vault_entries(name),
+    granted_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS vault_run_tickets (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    command_json TEXT NOT NULL,
+    selection_json TEXT NOT NULL,
+    key_names_json TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    consumed_at TEXT,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS vault_run_tickets_lookup
+  ON vault_run_tickets(command_json, selection_json, consumed_at, expires_at);
+
+  PRAGMA user_version = 2;
 `;
