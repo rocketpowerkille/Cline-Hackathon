@@ -14,5 +14,8 @@
     "@types/node": "^24.10.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@napi-rs/keyring": "^2.1.0"
   }
 }

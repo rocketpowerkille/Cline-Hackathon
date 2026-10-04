@@ -59,3 +59,10 @@ On systems where PowerShell execution policy does not shadow npm, normal `npm` c
 - Anthropic-compatible responder credentials
 
 Every optional integration requires an offline fallback.
+
+## Vault implementation
+
+- `@napi-rs/keyring` 2.1.0 is installed as a runtime dependency.
+- Production storage uses synchronous `Entry(service, account)` operations.
+- Tests use `MemorySecretStore`; they do not access Windows Credential Manager, macOS Keychain, or Linux credential stores.
+- Vault metadata is stored in `vault_entries` and `vault_grants` tables created by the isolated module until shared-schema integration.
