@@ -107,6 +107,27 @@ trust result
 - A sandbox block reason and labels participate in the same final decision composition as other engine stages.
 - Persist sandbox evidence through the store after an action row exists; do not let the sandbox module own SQLite.
 
+## Install layer (Segment 08B)
+
+```text
+warden init
+  -> preflight hook launcher / tsx / Cursor JSON
+  -> optional vault seed
+  -> create unoccupied Cline wrappers
+  -> create owned Cursor wrappers
+  -> merge Cursor hook entries
+  -> ensure .warden/ is ignored
+  -> write .warden/install.json ownership manifest
+```
+
+- Cline exposes fixed event filenames. Existing files are preserved and reported; Warden never overwrites or automatically chains them.
+- Cursor supports hook arrays, so Warden appends exact repository-relative wrapper commands without replacing existing entries.
+- The manifest is bookkeeping, not authority: uninstall derives removable paths from fixed supported events and requires recorded hashes to match.
+- Cursor uninstall removes one owned matching entry, preserving identical duplicates added later.
+- Modified managed files survive repeat init and uninstall.
+- Install and doctor preflight the source-checkout `tsx` loader before writing hooks.
+- Optional `.env` seeding delegates to `SecretVault` before hook/config changes.
+
 ## Reliability patterns
 
 - Hook boundary catches failures and returns host-specific allow output.
@@ -119,3 +140,4 @@ trust result
 - Exposure grants are recorded on the child `spawn` event, not before process creation succeeds.
 - Sandbox temporary directories are removed in `finally`; named containers receive repeated forced cleanup attempts.
 - Scripts outside the protected repository, timeouts, and Docker execution failures fail closed.
+- Installer tests use only OS temporary repositories; automated tests never initialize the Warden development repository.

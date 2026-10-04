@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline/promises";
+import path from "node:path";
 import process from "node:process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseWardenRunArgv } from "./args.js";
 import { wardenStatePath } from "../core/paths.js";
+import { doctorWarden, installWarden, uninstallWarden, type InstallResult } from "../install/init.js";
 import { WardenStore } from "../store/database.js";
 import { KeyringSecretStore, keyringService, SecretVault } from "../vault/secrets.js";
 
@@ -28,6 +30,41 @@ export async function runCli(
   openContext: (root: string) => CliContext = openRepositoryContext,
 ): Promise<number> {
   const [command, subcommand, ...rest] = argv;
+  const root = process.cwd();
+  const packageRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+
+  if (command === "init") {
+    const seedEnv = subcommand === "--seed-env";
+    if ((subcommand && !seedEnv) || rest.length > 0) throw new Error("Usage: warden init [--seed-env]");
+    let context: CliContext | undefined;
+    try {
+      if (seedEnv) context = openContext(root);
+      const result = installWarden({
+        root,
+        packageRoot,
+        seedEnv,
+        ...(context ? { vault: context.vault } : {}),
+      });
+      printInstallResult(result, io);
+      return 0;
+    } finally {
+      context?.close();
+    }
+  }
+
+  if (command === "uninstall") {
+    if (subcommand || rest.length) throw new Error("Usage: warden uninstall");
+    printInstallResult(uninstallWarden(root), io);
+    return 0;
+  }
+
+  if (command === "doctor") {
+    if (subcommand || rest.length) throw new Error("Usage: warden doctor");
+    const result = doctorWarden({ root, packageRoot });
+    for (const check of result.checks) io.stdout.write(`${check.status.toUpperCase()} ${check.message}\n`);
+    return result.ok ? 0 : 1;
+  }
+
   const context = openContext(process.cwd());
   try {
     if (command === "vault" && subcommand === "add") {
@@ -67,10 +104,17 @@ export async function runCli(
       });
     }
 
-    throw new Error("Usage: warden <vault add|seed|list|run>");
+    throw new Error("Usage: warden <init|uninstall|doctor|vault add|seed|list|run>");
   } finally {
     context.close();
   }
+}
+
+function printInstallResult(result: InstallResult, io: CliIo): void {
+  for (const item of result.installed) io.stdout.write(`${item}\n`);
+  for (const item of result.skipped) io.stdout.write(`SKIPPED ${item}\n`);
+  for (const warning of result.warnings) io.stderr.write(`WARN ${warning}\n`);
+  if (result.seeded.length) io.stdout.write(`Seeded: ${result.seeded.join(", ")}\n`);
 }
 
 export function openRepositoryContext(root: string): CliContext {
