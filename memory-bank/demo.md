@@ -2,6 +2,16 @@
 
 ## Entry points
 
+- All-capabilities view: `/capabilities` on the Demo Studio server. Catalog/page: `demo/capabilities-model.ts` and `capabilities-page.ts`. Source-backed explanation, not a live health feed; only matching executed replay events count as replay evidence. Risk lab is illustrative; real thresholds are imported from policy. Guided tour, search/filter, recording/fullscreen controls. Tests: `test/capabilities.test.ts` and visualizer API coverage.
+
+- Video visualizer: `npm.cmd run demo:visualize` → `http://127.0.0.1:8766/`. Implementation: `demo/visualize.ts`, `visualizer-model.ts`, `visualizer-server.ts`, `visualizer-page.ts`. Uses executed offline demo trace and summary, not synthetic success events. Only read-only loopback routes; no application or approval integration. OpenDots assessment summary is static prior context, not a live retest. Tests: `test/visualizer.test.ts`. The separate video guide was removed at the user's request; both visualizers remain.
+
+### Visualizer verification
+
+- Typecheck, build, new evidence/API test, and actual CLI startup passed.
+- Local Chromium smoke test exercised evidence load, playback, chapter selection, stepping, scrubbing, findings panel, recording mode, keyboard restart, 1920×1080 fit, and 390px mobile width; no JavaScript errors. It reused the already-installed OpenDots Playwright package without installing dependencies or changing OpenDots. Preview: `.warden/video/demo-studio-1920.png` in the Warden checkout.
+- Full regression run: 144 passed, 1 skipped, 1 failed. The unchanged install test at `test/install.test.ts:355` expects `static`, but the now-available Docker backend returns `docker`; isolated rerun reproduced the same backend-expectation failure. This existing test was not edited as part of the visualizer.
+
 - `npm run demo`
 - `demo/run-demo.ts`
 - Replay fixture: `demo/replay-actions.json`
@@ -39,7 +49,7 @@ On Windows the real shell script uses Git Bash when available; a Node fallback p
 
 ## Output
 
-The terminal prints a colorized one-line trace with statuses including FAIL, FLAG, HOLD, ALLOW, BLOCK, and the final attacker request count.
+Each part prints aligned `STATUS`, `ACTOR`, `ACTION`, `RISK`, and `DETAIL` column headings. The terminal then prints a colorized one-line trace with statuses including FAIL, FLAG, HOLD, ALLOW, BLOCK, and the final attacker request count. After the first scored action, one `CLEF` line explicitly says either `USED — Cloudflare clef-flash` / `USED — local clef-flash` or `NOT USED — offline heuristic`.
 
 ## Part 3 — Offline response
 

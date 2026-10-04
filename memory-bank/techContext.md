@@ -105,6 +105,8 @@ npm.cmd run warden -- run [--only NAME[,NAME...]] -- <command> [args...]
 
 ## Sandbox implementation
 
+- `npm.cmd run test:docker` explicitly requires Docker plus the cached configured image and never pulls automatically. `test/docker-sandbox.test.ts` checks actual execution, dynamic control-file changes, copied-secret canaries, in-container network/capability/no-new-privileges settings, and engine-linked runtime evidence. Local Docker is now available; older daemon-down notes below describe earlier checks.
+
 - No new npm dependency is used; filesystem inspection and Docker invocation use Node's standard library.
 - Default cached image name: `node:22-alpine`, overridable with `WARDEN_SANDBOX_IMAGE`.
 - Docker readiness and image inspection use an allowlisted client environment.

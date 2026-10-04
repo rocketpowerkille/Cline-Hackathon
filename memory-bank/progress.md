@@ -27,6 +27,8 @@ Segments 00–08 and all three offline demo parts are integrated. Fresh-install 
 
 ## What works
 
+- Video-friendly Demo Studio runs the real offline demo and replays its evidence with playback/recording controls. Fake credentials, mock rotation, demo approval, and offline scoring stay explicitly labeled; OpenDots remains untouched. Launch with `npm.cmd run demo:visualize`; both visualizers remain available after removal of the separate video guide.
+
 - Strict TypeScript ESM project, shared action contracts, and portable paths.
 - SQLite ledger with versioned migrations, WAL, busy timeout, sessions, decisions, vault metadata, and trust provenance.
 - Cline and Cursor hooks share one repository ledger and fail open on Warden crashes.
@@ -45,6 +47,7 @@ Segments 00–08 and all three offline demo parts are integrated. Fresh-install 
 - Local dashboard, approval waiter, security controls, and UI are implemented and tested.
 - Demo Parts 1–3 prove localhost exfiltration without Warden, zero attacker requests with Warden, and mock-backed rotation, restoration, and quarantine.
 - Configured interactive demo runs require persisted `cloudflare` scoring; the test preload still forces the heuristic and makes no network calls.
+- Demo output includes a one-time explicit `CLEF USED` or `CLEF NOT USED` indication plus aligned column headings wide enough for `QUARANTINE`.
 
 ## Remaining work
 
@@ -88,6 +91,14 @@ Segments 00–08 and all three offline demo parts are integrated. Fresh-install 
 - Cursor wrappers are project-local to avoid fragile Windows absolute-command quoting.
 
 ## Verification
+
+- Main publication preparation: removed only the standalone video guide, retained both visualizers, and integrated the latest upstream Cloudflare changes. Pre-push suite: **151 passed, 0 failed, 7 skipped** (158 total); typecheck/build passed. Real `.env` remains Git-ignored and was not staged. OpenDots remains untouched.
+
+- OpenAI responder configuration: dedicated SDK-only package `.env` loader and provider/key matching tests passed. Local provider/model resolved to `openai-native` / `gpt-4.1-mini`, key presence confirmed without outputting its value, `.env` remains ignored. Typecheck/build passed. Full suite: **148 passed, 0 failed, 6 optional Docker skips** (154 total). Live SDK/model execution and real credential rotation remain unverified.
+
+- Capability Explorer addition: full suite **152 passed, 0 failed, 0 skipped**. Browser smoke verified all 12 views fit the 1920×1080 recording frame, mobile width, search/filter, decision-pipeline navigation, illustrative risk math, actual guided-tour advancement, recording mode, and replay-to-explorer navigation; no JavaScript errors. Preview: `.warden/video/capabilities-1920.png`.
+
+- Docker test addition: `npm.cmd run test:docker` passed all 5 new integration cases on actual Docker, with no skips; missing-image strict failure and ordinary optional skipping were separately verified. Final full suite: **151 passed, 0 failed, 0 skipped**. Typecheck and diff check passed; no leftover shadow containers. The former install-test backend assumption now accepts static or Docker while enforcing a blocked verdict. OpenDots was not modified.
 
 - Full `npm.cmd test`: 142 passed, 0 failed, 3 optional Docker skips (October 4, 2026 after changing to Cloudflare-first scoring).
 - `npm.cmd run typecheck`: passed.

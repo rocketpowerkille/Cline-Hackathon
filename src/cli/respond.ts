@@ -2,10 +2,11 @@
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import process from "node:process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { ClineSdkAgentRunner, respondWithAgents } from "../responder/agents.js";
 import { respondDeterministically } from "../responder/runbook.js";
 import type { KeyProvider } from "../responder/providers.js";
+import { responderConfiguration } from "../config/responder.js";
 
 export interface RespondCliIo {
   stdout: NodeJS.WritableStream;
@@ -14,6 +15,7 @@ export interface RespondCliIo {
 
 export async function runRespondCli(argv: readonly string[], io: RespondCliIo = { stdout: process.stdout, stderr: process.stderr }): Promise<number> {
   const parsed = parseArgs(argv);
+  const sdkConfig = parsed.sdk ? responderConfiguration(path.resolve(fileURLToPath(new URL("../..", import.meta.url)))) : undefined;
   if (parsed.sdk) {
     try { import.meta.resolve("@cline/sdk"); }
     catch { throw new Error("Optional Cline SDK is not installed. Install and audit it separately before using --sdk."); }
@@ -24,7 +26,6 @@ export async function runRespondCli(argv: readonly string[], io: RespondCliIo = 
   try {
     // The demo injects mocks directly into its own runbook; CLI never simulates real rotation.
     const providers: KeyProvider[] = [];
-    const apiKey = process.env.WARDEN_RESPONDER_API_KEY ?? process.env.ANTHROPIC_API_KEY;
     const result = !parsed.sdk
       ? await respondDeterministically({
           workspaceRoot: root,
@@ -39,11 +40,7 @@ export async function runRespondCli(argv: readonly string[], io: RespondCliIo = 
           sessionId: parsed.sessionId,
           trigger: parsed.trigger,
           providers,
-          runner: new ClineSdkAgentRunner({
-            providerId: process.env.WARDEN_RESPONDER_PROVIDER ?? "anthropic",
-            modelId: process.env.WARDEN_RESPONDER_MODEL ?? "claude-sonnet-4-6",
-            apiKey: apiKey!,
-          }),
+          runner: new ClineSdkAgentRunner(sdkConfig!),
         });
     io.stdout.write(`${result.closed ? "CLOSED" : "OPEN"} ${result.reportPath}\n`);
     for (const rotation of result.rotations) io.stdout.write(`${rotation.oldRejected ? "OK" : "CRITICAL"} ${rotation.message}\n`);
@@ -68,7 +65,6 @@ function parseArgs(argv: readonly string[]): { sessionId: string; trigger: strin
     else throw new Error(`Unknown respond option: ${arg}`);
   }
   if (!sessionId || !trigger || (sdk && deterministic)) throw new Error('Usage: warden respond --session <id> --trigger "<why>" [--deterministic|--sdk]');
-  if (sdk && !process.env.WARDEN_RESPONDER_API_KEY && !process.env.ANTHROPIC_API_KEY) throw new Error("SDK response needs a responder API key; use --deterministic for offline response.");
   return { sessionId, trigger, deterministic, sdk };
 }
 

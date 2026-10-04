@@ -74,6 +74,8 @@ Segments 00–08 and the three-part offline demo are integrated. The fresh-insta
 - Without Warden, the obviously fake npm token reaches a localhost attacker.
 - With Warden, real Cursor/Cline payloads propagate taint, hold the control-file write, sandbox `scripts/setup.sh`, block execution, and deliver zero attacker requests.
 - When Cloudflare credentials are configured, the interactive demo skips Ollama, uses a 10-second demo-only CLEF timeout, displays the recorded backend, and fails on heuristic fallback.
+- The trace prints a dedicated one-time `CLEF` line stating whether clef-flash or the offline heuristic was used.
+- Each demo section prints aligned `STATUS`, `ACTOR`, `ACTION`, `RISK`, and `DETAIL` headings.
 - Demo Part 3 performs mock-backed key rotation/verification, restores the original `AGENTS.md`, and quarantines `scripts/setup.sh`.
 
 ## Combined verification

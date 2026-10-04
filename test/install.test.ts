@@ -352,7 +352,8 @@ test("fresh install propagates poisoned Cursor MCP result through wrappers to ne
       assert.match(String(blocked.errorMessage), /sandbox/i);
       const sandbox = ledger.database.prepare("SELECT verdict,backend FROM sandbox_runs ORDER BY id DESC LIMIT 1").get();
       assert.equal(sandbox?.verdict, "block");
-      assert.equal(sandbox?.backend, "static");
+      assert.ok(sandbox?.backend === "static" || sandbox?.backend === "docker",
+        "installed hook must persist sandbox evidence for the available isolation backend");
     } finally { ledger.close(); }
   } finally { repo.close(); }
 });
