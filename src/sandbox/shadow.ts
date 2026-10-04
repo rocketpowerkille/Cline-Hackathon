@@ -187,7 +187,7 @@ function runDockerShadow(
       "--workdir", "/workspace",
       "--env", "PATH=/warden-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
       "--env", "HOME=/tmp/warden-home", "--env", "CI=1", "--env", "WARDEN_SANDBOX=1",
-      options.image, "sh", "-lc", command,
+      options.image, "sh", "-c", command,
     ];
     const execution = spawnSync(options.docker, args, {
       encoding: "utf8",
