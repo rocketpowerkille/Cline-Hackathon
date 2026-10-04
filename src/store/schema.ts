@@ -73,6 +73,22 @@ export const migrations: readonly string[] = [
     granted_at TEXT NOT NULL
   );
   `,
+  // 3: single-use, command-bound tickets for `warden run`
+  `
+  CREATE TABLE IF NOT EXISTS vault_run_tickets (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    command_json TEXT NOT NULL,
+    selection_json TEXT NOT NULL,
+    key_names_json TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    consumed_at TEXT,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS vault_run_tickets_lookup
+  ON vault_run_tickets(command_json, selection_json, consumed_at, expires_at);
+  `,
 ];
 
 export const schemaVersion = migrations.length;

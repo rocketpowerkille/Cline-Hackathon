@@ -33,6 +33,7 @@ cases("everyday shell commands", "exec", "allow", [
   "git commit -am \"handle DROP TABLE and git push --force docs\"", "git commit --message='rm -rf cleanup'",
   "echo \"never run DROP TABLE users\"", "Write-Host 'git reset --hard is dangerous'",
   "cat src/hooks/run.ts", "Get-Content .\\src\\core\\engine.ts", "git add .clinerules/style.md AGENTS.md",
+  "warden run -- npm test", "warden run --only NPM_TOKEN -- npm publish --dry-run",
 ]);
 
 cases("routine MCP tools", "mcp", "allow", ["github/get_issue", "github/add_issue_comment", "filesystem/read_file"]);

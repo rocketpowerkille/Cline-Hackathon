@@ -1,6 +1,11 @@
 /** Canary helpers shared by the vault and policy code. Kept free of keychain imports so hooks stay light. */
 export const CANARY_PREFIX = "__WARDEN_CANARY__";
 
+/** Every distinct Warden canary (known or copied) in the content. */
+export function scanWardenCanaries(content: string): string[] {
+  return [...new Set(content.match(/__WARDEN_CANARY__[A-Za-z_][A-Za-z0-9_]*__[a-f0-9]{24}__/g) ?? [])];
+}
+
 export function isCanary(value: string): boolean {
   return value.startsWith(CANARY_PREFIX);
 }

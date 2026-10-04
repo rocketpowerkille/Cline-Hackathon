@@ -65,10 +65,74 @@ Every optional integration requires an offline fallback.
 - `@napi-rs/keyring` 2.1.0 is installed as a runtime dependency.
 - Production storage uses synchronous `Entry(service, account)` operations.
 - Tests use `MemorySecretStore`; they do not access Windows Credential Manager, macOS Keychain, or Linux credential stores.
-- Vault metadata is stored in `vault_entries` and `vault_grants` tables, created by shared migration v2.
-- Canary helpers live in `src/vault/canary.ts` (no keyring import) so hook processes stay light.
+- Vault metadata uses shared `vault_entries`/`vault_grants` (migration v2) and `vault_run_tickets` (migration v3).
+- Canary helpers (`scanWardenCanaries`, `isCanary`, `isFullyCanaried`) live in `src/vault/canary.ts` (no keyring import) so the engine path stays light.
 
 ## Schema migrations
 
 - `src/store/schema.ts` exports `migrations[]`; `migrate(db)` applies `migrations[user_version..]` one by one under `BEGIN IMMEDIATE`.
 - Append new migrations; never edit shipped ones. Use `IF NOT EXISTS` / additive changes so concurrent hooks and older DBs are safe.
+- `sandbox_runs` (below) should be migration v4.
+
+## Current CLI
+
+```text
+npm.cmd run warden -- vault add <NAME>
+npm.cmd run warden -- vault seed [.env]
+npm.cmd run warden -- vault list
+npm.cmd run warden -- run [--only NAME[,NAME...]] -- <command> [args...]
+```
+
+- The installed `warden` bin points at `bin/warden.mjs`, which registers `tsx` and loads the TypeScript CLI.
+- `vault add` reads the value from hidden TTY input; non-interactive input may be piped over stdin.
+- `warden run` requires a live ticket issued by an allowed agent action.
+
+## Sandbox implementation
+
+- No new npm dependency is used; filesystem inspection and Docker invocation use Node's standard library.
+- Default cached image name: `node:22-alpine`, overridable with `WARDEN_SANDBOX_IMAGE`.
+- Docker readiness and image inspection use an allowlisted client environment.
+- Docker execution uses `--pull=never`, `--network none`, dropped capabilities, no-new-privileges, PID/memory/CPU limits, and a 5-second default timeout.
+- Docker tests skip when the daemon/image is unavailable; static fallback tests always run.
+- Current local state: Docker client is installed, but the Docker Desktop Linux daemon is not running.
+
+### Deferred sandbox persistence
+
+Add a shared `sandbox_runs` table during Engine integration:
+
+```text
+id INTEGER PRIMARY KEY
+action_id INTEGER NOT NULL REFERENCES actions(id)
+backend TEXT NOT NULL
+verdict TEXT NOT NULL
+reason TEXT NOT NULL
+labels_json TEXT NOT NULL
+changed_files_json TEXT NOT NULL
+secret_files_json TEXT NOT NULL
+canaries_json TEXT NOT NULL
+network_attempts_json TEXT NOT NULL
+control_files_json TEXT NOT NULL
+exit_code INTEGER
+timed_out INTEGER NOT NULL
+duration_ms INTEGER NOT NULL
+created_at TEXT NOT NULL
+```
+
+Do not store raw command output, copied source text, environment variables, or secret values. Add a prepared `WardenStore.recordSandboxRun(actionId, result, durationMs)` method rather than writing SQL from `src/sandbox/`.
+
+### Deferred Engine API change
+
+The live repository engine should construct dependencies approximately as:
+
+```text
+new Engine(store, {
+  workspaceRoot,
+  vault,
+  guardrails,
+  sandbox: shadowRun,
+})
+```
+
+The final shape may stay smaller, but `workspaceRoot` and the sandbox runner must be explicit and injectable.
+
+Status after the Segment 02 merge: `new Engine(store, { workspaceRoot, stages, vault })` exists, with `stages.guardrails` and `stages.canaries`. Add `stages.sandbox` (wrapping `shadowRun`) to the same `EngineStages` interface.
