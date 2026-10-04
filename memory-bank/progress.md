@@ -2,14 +2,14 @@
 
 ## Current status
 
-Segments 00, 01, 02, 05, and the standalone Segment 06 sandbox are complete and verified together. Next: wire guardrail `sandbox` verdicts to `shadowRun()`, then Segment 03.
+Segments 00, 01, 02, 05 and standalone Segment 06 are complete; Segment 03 trust tracking and sandbox invocation are implemented. Sandbox evidence persistence, shell-write coverage, and approval remain outstanding.
 
 ## Milestones
 
 - [x] Segment 00 — Foundation
 - [x] Segment 01 — Agent Hooks
 - [x] Segment 02 — Guardrails
-- [ ] Segment 03 — Trust Tracking
+- [x] Segment 03 — Trust Tracking (known shell visibility limitations)
 - [ ] Segment 04 — Risk Scoring
 - [x] Segment 05 — Secret Vault
 - [x] Segment 06 — Sandbox (engine/guardrail wiring pending)
@@ -60,8 +60,8 @@ Segments 03–04 and 07–08, sandbox engine/ledger wiring, remaining CLI comman
 
 ## Mocks and shortcuts
 
-- Trust is `action.untrustedInput` (adapters always set false) until Segment 03.
-- `sandbox` and `ask` verdicts reach hosts as cancel/deny until Segments 06/08.
+- Trust is enriched by shared session/file provenance in the engine; adapters still start with false.
+- `ask` still reaches hosts as cancel/deny pending approval; `sandbox` is evaluated in the engine.
 - Risk fields in decisions are zero until Segment 04.
 - Hook scripts and installer are deferred to Segment 08.
 - No Cline SDK plugin adapter yet; file hooks only.
@@ -69,7 +69,7 @@ Segments 03–04 and 07–08, sandbox engine/ledger wiring, remaining CLI comman
 - Automated tests use memory storage; the native keychain needs one manual smoke test per platform.
 - Docker-only tests are skipped locally because the daemon is unavailable; static fallback is the required zero-Docker path.
 - Network wrappers can be bypassed by absolute-path clients, so static network detection and `--network none` remain authoritative.
-- The standalone sandbox is not yet reachable from live agent hooks; Guardrails now emit `sandbox`; the engine stage that calls `shadowRun()` is the next step.
+- Sandbox evidence ledger summaries are not yet persisted; dynamically generated shell writes and file discovery through listing/search remain blind spots.
 
 ## Known issues
 
@@ -97,9 +97,11 @@ Segments 03–04 and 07–08, sandbox engine/ledger wiring, remaining CLI comman
 - Sandbox static analysis always runs before optional Docker execution.
 - Sandbox rejects timeouts, Docker execution errors, and scripts outside the workspace.
 - Shadow copies exclude known credential files and redact secret-like assignments and common inline token formats.
+- Session taint and file taint are sticky; only a future explicit reviewed cleanup may clear provenance. The first pre-taint snapshot is never replaced by later tainted edits.
 
 ## Verification
 
+- Segment 03: `npm.cmd test` 79 passed, 0 failed, 3 Docker-only skips; `npm.cmd run typecheck` and `git diff --check` passed.
 - `npm.cmd test`: 74 passed, 0 failed, 3 skipped because Docker is unavailable (after merging Segment 02 with 05/06).
 - `npm.cmd run typecheck`: passed.
 - `git diff --check`: passed.

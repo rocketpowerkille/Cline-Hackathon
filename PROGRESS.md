@@ -5,7 +5,7 @@
 | 00 Foundation | Complete | Verified in combined suite |
 | 01 Agent Hooks | Complete | Verified in combined suite |
 | 02 Guardrails | Complete | 74 passed + 3 Docker skips after merge, typecheck, hook e2e |
-| 03 Trust Tracking | Not started | — |
+| 03 Trust Tracking | Implemented; shell visibility limits documented | Cross-agent/day chain, snapshot, post-hook and sandbox tests |
 | 04 Risk Scoring | Not started | — |
 | 05 Secret Vault | Complete | 42 tests passed; strict typecheck passed |
 | 06 Sandbox | Complete; engine wiring pending | 51 tests passed; 3 Docker tests skipped |
@@ -14,12 +14,12 @@
 
 ## Current scope
 
-Segments 00, 01, 02, 05, and the standalone Segment 06 sandbox are merged on `main`. The engine runs two stages (guardrails, then vault canaries) and issues `warden run` tickets. Next: connect guardrail `sandbox` verdicts to `shadowRun()`, then Segment 03 (trust tracking).
+Segments 00, 01, 02, 05, and the standalone Segment 06 sandbox were merged on `main`. Segment 03 now records sticky session/file provenance; the engine calls the sandbox for guardrail sandbox requests and continues evaluation on allow. Sandbox evidence persistence is still pending.
 
 ## Deliberate shortcuts
 
-- Trust is the `untrustedInput` flag (always false from adapters) until Segment 03.
-- `sandbox` verdicts are not yet passed to `shadowRun()`; until then they reach hosts as cancel/deny, like `ask` (approvals arrive in 08).
+- Hook adapters still supply `untrustedInput: false`; the engine enriches this from shared ledger provenance. Generic shell output taints conservatively when observed.
+- Guardrail `sandbox` verdicts invoke `shadowRun()`; `ask` still reaches hosts as deny (approvals arrive in 08).
 - Hook wrapper scripts and installer arrive in Segment 08.
 
 ## Segment 01 result
@@ -84,3 +84,13 @@ Segments 00, 01, 02, 05, and the standalone Segment 06 sandbox are merged on `ma
 - Scripts outside the protected repository and sandbox timeouts fail closed.
 - Docker-only tests skip when Docker is unavailable.
 - Verified with 51 passing tests, 3 Docker skips, strict typechecking, and a zero-vulnerability audit.
+
+## Segment 03 result
+
+- Added schema v4 with sticky session origins, first-writer file provenance, and hashed post-result injection observations; raw result bodies are not persisted.
+- Cline `PostToolUse` and Cursor `postToolUse` / `afterShellExecution` / `afterMCPExecution` are observational and never block. External results taint even if the injection regex does not flag them.
+- Workspace file reads (and simple shell argument reads) inherit file taint across agents/sessions. A denied pre-read does not spread taint.
+- Before an allowed tainted write, preserve the original existing file under `.warden/snapshots/` once, or record that it did not exist. Later tainted writes never replace the baseline. Trusted edits do not automatically clean a tainted file.
+- Direct shell redirection targets are approximated; dynamically computed paths, writes inside scripts, missed hooks, and broad file search/list output remain visibility gaps. Filesystem/sandbox observation and a future explicit trust-reset/review workflow are needed.
+- Untrusted command execution now invokes the sandbox: a poisoned `setup.sh` is blocked, while benign static evidence may allow through. Sandbox summaries are not yet stored in `sandbox_runs`.
+- Verification: `npm.cmd run typecheck` and `npm.cmd test` (79 passed, 3 optional Docker skips); `git diff --check` passed.

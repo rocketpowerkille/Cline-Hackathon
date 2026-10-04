@@ -30,6 +30,36 @@ export class WardenStore {
     this.database.close();
   }
 
+  sessionOrigin(sessionId: string): { reason: string; originSession: string | null } | null {
+    const row = this.database.prepare("SELECT reason, origin_session FROM trust_origins WHERE session_id = ?").get(sessionId);
+    return row ? { reason: String(row.reason), originSession: row.origin_session === null ? null : String(row.origin_session) } : null;
+  }
+
+  fileOrigin(key: string): { reason: string; writerSession: string; snapshotPath: string | null; existedBefore: boolean } | null {
+    const row = this.database.prepare("SELECT reason, writer_session, snapshot_path, existed_before FROM tainted_files WHERE path_key = ?").get(key);
+    return row ? {
+      reason: String(row.reason), writerSession: String(row.writer_session),
+      snapshotPath: row.snapshot_path === null ? null : String(row.snapshot_path), existedBefore: Boolean(row.existed_before),
+    } : null;
+  }
+
+  markUntrusted(sessionId: string, reason: string, originSession: string | null): void {
+    this.database.prepare("UPDATE sessions SET untrusted = 1, tainted_by_session = COALESCE(tainted_by_session, ?), updated_at = ? WHERE session_id = ?")
+      .run(originSession, new Date().toISOString(), sessionId);
+    this.database.prepare("INSERT OR IGNORE INTO trust_origins (session_id, reason, origin_session, created_at) VALUES (?, ?, ?, ?)")
+      .run(sessionId, reason, originSession, new Date().toISOString());
+  }
+
+  markFile(key: string, writerSession: string, reason: string, snapshotPath: string | null, existedBefore: boolean): void {
+    this.database.prepare("INSERT OR IGNORE INTO tainted_files (path_key, writer_session, reason, snapshot_path, existed_before, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(key, writerSession, reason, snapshotPath, existedBefore ? 1 : 0, new Date().toISOString());
+  }
+
+  recordObservation(sessionId: string, tool: string, target: string, output: string, flagged: boolean): void {
+    this.database.prepare("INSERT INTO injection_observations (session_id, tool, target, output_hash, flagged, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(sessionId, tool, target, createHash("sha256").update(output).digest("hex"), flagged ? 1 : 0, new Date().toISOString());
+  }
+
   record(action: AgentAction, decision: Decision): StoredDecision {
     const now = new Date().toISOString();
     const transaction = this.database.prepare("BEGIN");

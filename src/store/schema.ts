@@ -89,6 +89,32 @@ export const migrations: readonly string[] = [
   CREATE INDEX IF NOT EXISTS vault_run_tickets_lookup
   ON vault_run_tickets(command_json, selection_json, consumed_at, expires_at);
   `,
+  // 4: durable cross-session provenance and first pre-taint recovery baseline
+  `
+  CREATE TABLE IF NOT EXISTS trust_origins (
+    session_id TEXT PRIMARY KEY REFERENCES sessions(session_id),
+    reason TEXT NOT NULL,
+    origin_session TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS tainted_files (
+    path_key TEXT PRIMARY KEY,
+    writer_session TEXT NOT NULL REFERENCES sessions(session_id),
+    reason TEXT NOT NULL,
+    snapshot_path TEXT,
+    existed_before INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS injection_observations (
+    id INTEGER PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES sessions(session_id),
+    tool TEXT NOT NULL,
+    target TEXT NOT NULL,
+    output_hash TEXT NOT NULL,
+    flagged INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  `,
 ];
 
 export const schemaVersion = migrations.length;

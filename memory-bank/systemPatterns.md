@@ -78,6 +78,13 @@ Guardrails request sandbox -> shadowRun -> static evidence
 - Static and runtime evidence are combined; Docker success cannot erase a static secret or network finding.
 - The result callback is the persistence boundary until shared sandbox ledger wiring is added.
 
+## Trust tracking (Segment 03)
+
+- Post-result hooks observe actual external output, hash it for audit, and flag injection-like patterns. They never block. Any successful external result taints its session regardless of classifier result.
+- `trust_origins` holds sticky first exposure; `tainted_files` holds first writer and baseline snapshot; reads propagate reason chains across agents/days.
+- Allowed tainted writes capture a pre-write baseline once under `.warden/snapshots/`. Trusted edits preserve existing taint; explicit review and trust reset are future work.
+- Engine calls sandbox only for guardrail sandbox requests when no higher-priority finding exists. An allow proceeds through the remaining decision path, not an unconditional policy bypass.
+
 ### Deferred engine integration contract
 
 ```text

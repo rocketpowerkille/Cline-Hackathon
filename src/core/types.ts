@@ -14,6 +14,11 @@ export interface AgentAction {
   content: string;
   untrustedInput: boolean;
   userIntent: string;
+  /** Observational hook result; never saved as an action preview. */
+  observedOutput?: string;
+  /** Only post-execution hooks set this. */
+  post?: boolean;
+  success?: boolean;
 }
 
 export const verdicts = ["allow", "ask", "sandbox", "block"] as const;

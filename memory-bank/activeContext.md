@@ -2,7 +2,7 @@
 
 ## Current focus
 
-Segments 00, 01, 02, 05, and the standalone 06 sandbox are merged on `main`. Next: connect guardrail `sandbox` verdicts to `shadowRun()` (wiring list below), then Segment 03 (Trust Tracking). Wait for the user's go-ahead.
+Segments 00, 01, 02, 05 and standalone 06 sandbox were merged on `main`. Segment 03 trust tracking and sandbox invocation are in the working tree; do not assume they were committed. Next: sandbox summary persistence, broader shell/file observation, risk and explicit review-based cleanup. Stop after memory update as requested.
 
 ### Segment 02
 
@@ -78,7 +78,7 @@ Segments 00, 01, 02, 05, and the standalone 06 sandbox are merged on `main`. Nex
 
 ## Next step
 
-Connect guardrail `sandbox` findings to `shadowRun()` via a new `sandbox` engine stage, then start Segment 03 (Trust Tracking).
+Segment 03 uses schema v4 and `src/core/trust.ts`: sticky origins, hashed injection observations, pre-taint snapshots, Cline/Cursor post hooks. `Engine` invokes `shadowRun()` for guardrail sandbox requests, but has no `sandbox_runs` persistence. Do not auto-clear taint on trusted edits; require explicit review with content verification.
 
 ## Remaining Segment 06 wiring
 
@@ -95,6 +95,7 @@ Segment 02 is now available; remaining steps:
 
 ## Verification
 
+- Segment 03: 79 passing tests, 3 Docker-only skips; typecheck and diff check passed. Trust chain e2e uses a test-only approval bypass for the control-file write; production still denies it pending Segment 08 approval.
 - `npm.cmd test`: 74 passed, 0 failed, 3 Docker-only tests skipped (after the Segment 02 merge).
 - `npm.cmd run typecheck`: passed.
 - `git diff --check`: passed.
