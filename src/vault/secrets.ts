@@ -4,8 +4,9 @@ import { readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "n
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Entry } from "@napi-rs/keyring";
+import { migrate } from "../store/schema.js";
+import { CANARY_PREFIX, isCanary } from "./canary.js";
 
-const CANARY_PREFIX = "__WARDEN_CANARY__";
 const KEY_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 export interface SecretStore {
@@ -70,22 +71,8 @@ export class SecretVault {
     private readonly database: DatabaseSync,
     private readonly secrets: SecretStore,
   ) {
-    this.database.exec(`
-      CREATE TABLE IF NOT EXISTS vault_entries (
-        name TEXT PRIMARY KEY,
-        placeholder TEXT NOT NULL UNIQUE,
-        source_path TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS vault_grants (
-        id INTEGER PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        name TEXT NOT NULL REFERENCES vault_entries(name),
-        granted_at TEXT NOT NULL
-      );
-    `);
+    // Vault tables live in the shared schema; this is a no-op when WardenStore already migrated.
+    migrate(this.database);
   }
 
   add(name: string, value: string, sourcePath: string | null = null): VaultEntry {
@@ -301,10 +288,6 @@ function validateSecret(name: string, value: string): void {
 
 function makePlaceholder(name: string): string {
   return `${CANARY_PREFIX}${name}__${randomBytes(12).toString("hex")}__`;
-}
-
-function isCanary(value: string): boolean {
-  return value.startsWith(CANARY_PREFIX);
 }
 
 function isInside(root: string, target: string): boolean {

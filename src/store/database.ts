@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { AgentAction, Decision, StoredDecision } from "../core/types.js";
-import { schema } from "./schema.js";
+import { migrate } from "./schema.js";
 
 const PREVIEW_LIMIT = 240;
 
@@ -15,7 +15,15 @@ export class WardenStore {
     this.database = new DatabaseSync(filename);
     // Cline and Cursor hooks run as concurrent processes against one ledger.
     this.database.exec("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL;");
-    this.database.exec(schema);
+    migrate(this.database);
+  }
+
+  /** Environment files the vault has seeded, as stored (relative to the protected repository). */
+  vaultSourcePaths(): string[] {
+    return this.database
+      .prepare("SELECT DISTINCT source_path FROM vault_entries WHERE source_path IS NOT NULL")
+      .all()
+      .map((row) => String(row.source_path));
   }
 
   close(): void {

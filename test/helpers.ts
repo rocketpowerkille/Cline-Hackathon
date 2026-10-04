@@ -46,7 +46,7 @@ export function fakeEngine(verdict: Verdict = "allow"): FakeEngine {
     factory: (root) => {
       fake.roots.push(root);
       return {
-        decide: (action) => {
+        decide: async (action) => {
           fake.actions.push(action);
           return decision(verdict, "Matched a test policy.");
         },

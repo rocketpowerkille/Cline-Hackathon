@@ -12,7 +12,7 @@ if (!isHookHost(host)) {
 const chunks: Buffer[] = [];
 for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
 
-const result = runHook({
+const result = await runHook({
   host,
   event,
   input: decodeHookInput(Buffer.concat(chunks)),

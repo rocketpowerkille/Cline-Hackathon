@@ -65,4 +65,10 @@ Every optional integration requires an offline fallback.
 - `@napi-rs/keyring` 2.1.0 is installed as a runtime dependency.
 - Production storage uses synchronous `Entry(service, account)` operations.
 - Tests use `MemorySecretStore`; they do not access Windows Credential Manager, macOS Keychain, or Linux credential stores.
-- Vault metadata is stored in `vault_entries` and `vault_grants` tables created by the isolated module until shared-schema integration.
+- Vault metadata is stored in `vault_entries` and `vault_grants` tables, created by shared migration v2.
+- Canary helpers live in `src/vault/canary.ts` (no keyring import) so hook processes stay light.
+
+## Schema migrations
+
+- `src/store/schema.ts` exports `migrations[]`; `migrate(db)` applies `migrations[user_version..]` one by one under `BEGIN IMMEDIATE`.
+- Append new migrations; never edit shipped ones. Use `IF NOT EXISTS` / additive changes so concurrent hooks and older DBs are safe.

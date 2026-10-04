@@ -10,7 +10,7 @@ export const hookHosts = ["cline", "cursor"] as const;
 export type HookHost = (typeof hookHosts)[number];
 
 export interface OpenEngine {
-  decide(action: AgentAction): Decision;
+  decide(action: AgentAction): Promise<Decision>;
   close(): void;
 }
 
@@ -38,7 +38,7 @@ export function isHookHost(value: unknown): value is HookHost {
 
 export function openRepositoryEngine(workspaceRoot: string): OpenEngine {
   const store = new WardenStore(wardenStatePath(workspaceRoot, "warden.db"));
-  const engine = new Engine(store);
+  const engine = new Engine(store, { workspaceRoot });
   return {
     decide: (action) => engine.decide(action),
     close: () => store.close(),
@@ -46,7 +46,7 @@ export function openRepositoryEngine(workspaceRoot: string): OpenEngine {
 }
 
 /** Runs one host hook. Any Warden failure fails open with the host's allow response. */
-export function runHook(request: HookRequest): HookOutput {
+export async function runHook(request: HookRequest): Promise<HookOutput> {
   const adapter = adapters[request.host];
   let event = request.event ?? "";
 
@@ -58,7 +58,7 @@ export function runHook(request: HookRequest): HookOutput {
 
     const engine = (request.openEngine ?? openRepositoryEngine)(normalized.workspaceRoot);
     try {
-      return adapter.respond(event, engine.decide(normalized.action));
+      return adapter.respond(event, await engine.decide(normalized.action));
     } finally {
       engine.close();
     }

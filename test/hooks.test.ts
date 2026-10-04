@@ -11,9 +11,9 @@ import { fakeEngine, fixture, tempWorkspace } from "./helpers.js";
 const repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const hookEntry = path.join(repoRoot, "src", "hooks", "main.ts");
 
-test("runHook routes a Cline action through the engine and cancels a block", () => {
+test("runHook routes a Cline action through the engine and cancels a block", async () => {
   const fake = fakeEngine("block");
-  const output = runHook({
+  const output = await runHook({
     host: "cline",
     input: JSON.stringify(fixture("cline-pre-tool-use.json", "repo-root")),
     cwd: "elsewhere",
@@ -27,31 +27,31 @@ test("runHook routes a Cline action through the engine and cancels a block", () 
   assert.equal(output.exitCode, 0);
 });
 
-test("runHook uses the installer event name for Cursor", () => {
+test("runHook uses the installer event name for Cursor", async () => {
   const fake = fakeEngine("sandbox");
   const payload = { ...fixture("cursor-before-shell.json", "repo-root"), hook_event_name: "" };
-  const output = runHook({ host: "cursor", event: "beforeShellExecution", input: JSON.stringify(payload), cwd: ".", openEngine: fake.factory });
+  const output = await runHook({ host: "cursor", event: "beforeShellExecution", input: JSON.stringify(payload), cwd: ".", openEngine: fake.factory });
 
   assert.equal(fake.actions[0]?.target, "npm run setup");
   assert.equal(JSON.parse(output.stdout).permission, "deny");
 });
 
-test("runHook skips the engine for observational events", () => {
+test("runHook skips the engine for observational events", async () => {
   const fake = fakeEngine("block");
-  const output = runHook({ host: "cline", input: JSON.stringify({ hookName: "TaskComplete", taskId: "t" }), cwd: ".", openEngine: fake.factory });
+  const output = await runHook({ host: "cline", input: JSON.stringify({ hookName: "TaskComplete", taskId: "t" }), cwd: ".", openEngine: fake.factory });
 
   assert.equal(fake.actions.length, 0);
   assert.deepEqual(JSON.parse(output.stdout), { cancel: false });
 });
 
-test("runHook fails open with host allow output when Warden fails", () => {
+test("runHook fails open with host allow output when Warden fails", async () => {
   const errors: unknown[] = [];
   const broken = () => {
     throw new Error("database unavailable");
   };
 
-  const cline = runHook({ host: "cline", input: "{broken", cwd: ".", onError: (error) => errors.push(error) });
-  const cursor = runHook({
+  const cline = await runHook({ host: "cline", input: "{broken", cwd: ".", onError: (error) => errors.push(error) });
+  const cursor = await runHook({
     host: "cursor",
     input: JSON.stringify(fixture("cursor-before-shell.json", "repo-root")),
     cwd: ".",
@@ -64,9 +64,9 @@ test("runHook fails open with host allow output when Warden fails", () => {
   assert.equal(errors.length, 2);
 });
 
-test("runHook closes the engine even when a decision throws", () => {
+test("runHook closes the engine even when a decision throws", async () => {
   let closed = 0;
-  const output = runHook({
+  const output = await runHook({
     host: "cursor",
     input: JSON.stringify(fixture("cursor-before-shell.json", "repo-root")),
     cwd: ".",
@@ -84,11 +84,11 @@ test("runHook closes the engine even when a decision throws", () => {
   assert.deepEqual(JSON.parse(output.stdout), { permission: "allow" });
 });
 
-test("Cline and Cursor sessions share one ledger in the protected repository", () => {
+test("Cline and Cursor sessions share one ledger in the protected repository", async () => {
   const workspace = tempWorkspace();
   try {
-    runHook({ host: "cline", input: JSON.stringify(fixture("cline-pre-tool-use.json", workspace)), cwd: "." });
-    runHook({ host: "cursor", input: JSON.stringify(fixture("cursor-before-shell.json", workspace)), cwd: "." });
+    await runHook({ host: "cline", input: JSON.stringify(fixture("cline-pre-tool-use.json", workspace)), cwd: "." });
+    await runHook({ host: "cursor", input: JSON.stringify(fixture("cursor-before-shell.json", workspace)), cwd: "." });
 
     const store = new WardenStore(path.join(workspace, ".warden", "warden.db"));
     const rows = store.database.prepare("SELECT source, session_id AS sessionId FROM actions ORDER BY id").all();
@@ -105,7 +105,7 @@ test("Cline and Cursor sessions share one ledger in the protected repository", (
   }
 });
 
-test("hook entry point speaks JSON over stdio as a separate process", () => {
+test("hook entry point speaks JSON over stdio as a separate process", async () => {
   const workspace = tempWorkspace();
   const run = (args: string[], input: string) =>
     spawnSync(process.execPath, ["--import", "tsx", hookEntry, ...args], {

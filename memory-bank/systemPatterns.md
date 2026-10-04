@@ -33,6 +33,22 @@ src/adapters/{common,cline,cursor}.ts
 - `EngineFactory` is injectable so tests can produce non-allow verdicts without real policy.
 - Host contract details live in `hookContracts.md`.
 
+## Engine and policy (Segment 02)
+
+```text
+src/core/engine.ts       Engine(store, {workspaceRoot, stages}).decide(action): Promise<Decision>
+src/policy/guardrails.ts GuardrailStage(action, PolicyContext) -> Finding[]
+src/policy/targets.ts    pathKey() canonicalization + shellSegments() light tokenizer
+src/policy/pathRules.ts  control / secret / Warden path classifiers
+src/policy/commandRules.ts destructive / remote-exec / egress / Warden CLI classifiers
+src/store/schema.ts      migrations[] + migrate() (PRAGMA user_version)
+```
+
+- Stages are plain functions in `EngineStages`; tests pass `stages: {guardrails: fake}`. Later segments add stages to the same interface.
+- Stages never pick the verdict. `combine(findings)` applies block > ask > sandbox > allow, joins top reasons, and unions labels.
+- `PolicyContext` gives stages read-only workspace facts (`isCanariedEnv`), so policy modules don't touch SQL.
+- Rule details: `guardrails.md`.
+
 ## Boundaries
 
 - Adapters validate host input, normalize it, and translate the final verdict.
