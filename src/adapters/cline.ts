@@ -107,6 +107,18 @@ export const clineAdapter: HostAdapter = {
         const action: AgentAction | null = mapped && { ...base, tool, ...mapped };
         return { workspaceRoot, action };
       }
+      case "PostToolUse": {
+        const data = record(payload.postToolUse);
+        const tool = text(data.toolName);
+        if (!tool) throw new HookInputError("Cline PostToolUse input is missing postToolUse.toolName.");
+        const mapped = mapClineTool(tool, record(data.parameters));
+        return { workspaceRoot, action: mapped && {
+          ...base, ...mapped, tool, post: true, success: data.success !== false,
+          observedOutput: text(data.result),
+          // Result bodies must never land in action previews; output is hashed separately.
+          content: "",
+        } };
+      }
       case "UserPromptSubmit": {
         const prompt = text(record(payload.userPromptSubmit).prompt);
         return {
@@ -126,7 +138,8 @@ export const clineAdapter: HostAdapter = {
     }
   },
 
-  respond(_event, decision: Decision | null) {
+  respond(event, decision: Decision | null) {
+    if (event === "PostToolUse") return json({ cancel: false });
     if (isAllowed(decision) || decision === null) return json({ cancel: false });
     return json({
       cancel: true,

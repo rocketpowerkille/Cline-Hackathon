@@ -76,6 +76,7 @@ Every optional integration requires an offline fallback.
 - `src/store/schema.ts` exports `migrations[]`; `migrate(db)` applies `migrations[user_version..]` one by one under `BEGIN IMMEDIATE`.
 - Append new migrations; never edit shipped ones. Use `IF NOT EXISTS` / additive changes so concurrent hooks and older DBs are safe.
 - `sandbox_runs` (below) should be migration v4.
+- Trust tables are migration v4; `sandbox_runs` must be a later append-only migration (v5 or newer).
 
 ## Current CLI
 

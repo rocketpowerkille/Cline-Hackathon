@@ -39,6 +39,12 @@ Sources: `cline/cline` main (`apps/vscode/proto/cline/hooks.proto`, `apps/vscode
 - `beforeSubmitPrompt{prompt, attachments}` -> `{continue, user_message}`.
 - `preToolUse{tool_name, tool_input(object), tool_use_id, cwd}` -> `{permission: allow|deny, user_message, agent_message, updated_input}`; `ask` is not enforced.
 - Exit 2 = deny. Invalid JSON from a permission hook BLOCKS. Crash/timeout/other exit codes fail open unless `failClosed: true`.
+- Observational `postToolUse` provides `tool_name`, `tool_input`, and JSON-stringified `tool_output`; specialized `afterShellExecution` and `afterMCPExecution` provide shell `output` and MCP `result_json` respectively. Warden responds with `{}` and never blocks on these events. `afterFileEdit` exists but is not wired yet.
+
+## Segment 03 observations
+
+- Cline `PostToolUse` uses `postToolUse{toolName,parameters,result,success}` and always responds `{cancel:false}`. Output is hashed, not saved verbatim.
+- Cursor observation hooks are available; installation of hook wrappers/configuration still belongs to Segment 08.
 
 ## Warden mapping rules
 

@@ -10,18 +10,19 @@ Implemented:
 
 - Cline and Cursor hook adapters
 - Deterministic guardrails
+- Trust propagation across sessions and agents
 - Secret vault backed by the OS keychain
 - Secret canaries and outbound canary blocking
 - Ticketed `warden run` secret injection
 - Static and optional Docker shadow sandbox
+- Guardrail-triggered live sandbox invocation
 - Windows/Linux/macOS hook installer
 - `warden doctor` and safe uninstall
 
 Still in progress:
 
-- Trust propagation across sessions and agents
 - Risk scoring and cumulative session budgets
-- Sandbox-to-engine wiring and sandbox evidence persistence
+- Sandbox evidence persistence
 - Deterministic incident responder
 - Dashboard and human approval flow
 - Full offline attack demo
@@ -291,7 +292,7 @@ Real secret values are stored in the operating system keychain, not in `.warden/
 
 - This is an in-progress hackathon MVP.
 - The dashboard and approval UI are not implemented.
-- A Guardrails `sandbox` result is not yet connected to live engine shadow execution.
+- Sandbox decisions run live, but their evidence summaries are not yet persisted in a dedicated ledger table.
 - Cline Windows `.ps1` discovery should be manually verified against the installed Cline version.
 - The source-checkout installer requires `tsx`; a distributable release should compile TypeScript to JavaScript.
 - Do not use real production credentials for manual testing yet.

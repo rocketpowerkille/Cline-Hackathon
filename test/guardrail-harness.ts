@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import { after, test } from "node:test";
 import { Engine } from "../src/core/engine.js";
+import { guardrails } from "../src/policy/guardrails.js";
 import type { ActionKind, AgentAction, Decision, Verdict } from "../src/core/types.js";
 import { WardenStore } from "../src/store/database.js";
 import { tempWorkspace } from "./helpers.js";
@@ -37,6 +38,11 @@ export function guardrailHarness() {
     test(`${name} -> ${expected}`, async () => {
       for (const target of targets) {
         const decision = await decide(kind, target, extra);
+        if (expected === "sandbox") {
+          const findings = await guardrails(action(kind, target, extra), { workspaceRoot: root, isCanariedEnv: () => false });
+          assert.ok(findings.some((finding) => finding.verdict === "sandbox"), `${target} did not request sandbox`);
+          continue; // Sandbox may allow or block based on actual evidence, not just the lexical rule.
+        }
         assert.equal(decision.verdict, expected, `${kind} "${target}" -> ${decision.verdict}: ${decision.reason}`);
       }
     });

@@ -3,6 +3,7 @@ import test from "node:test";
 import { Engine } from "../src/core/engine.js";
 import type { AgentAction } from "../src/core/types.js";
 import { WardenStore } from "../src/store/database.js";
+import type { SandboxResult } from "../src/sandbox/shadow.js";
 
 test("engine returns allow and logs the decision", async () => {
   const store = new WardenStore(":memory:");
@@ -150,5 +151,44 @@ test("canary blocking takes precedence over run ticket issuance", async () => {
 
   assert.equal(result.verdict, "block");
   assert.equal(issued, false);
+  store.close();
+});
+
+test("sandbox stage is called only for guardrail sandbox requests and allow continues the pipeline", async () => {
+  for (const guardrail of ["allow", "ask", "block", "sandbox"] as const) {
+    const store = new WardenStore(":memory:");
+    let calls = 0;
+    const sandbox: SandboxResult = { verdict: "allow", reason: "clear", evidence: {
+      backend: "static", inspectedFiles: [], changedFiles: [], secretFiles: [], tokenReferences: [],
+      canaries: [], networkAttempts: [], controlFiles: [], obfuscation: [], outsideWorkspace: [],
+      exitCode: null, timedOut: false, executionError: null, labels: ["sandbox:checked"],
+    } };
+    const engine = new Engine(store, { stages: {
+      guardrails: () => guardrail === "allow" ? [] : [{ verdict: guardrail, label: "guardrail", reason: "rule" }],
+      sandbox: () => { calls++; return sandbox; },
+      canaries: () => [{ verdict: "block", label: "later-stage", reason: "later stage blocked" }],
+    } });
+    await engine.decide({ source: "replay", sessionId: `sandbox-${guardrail}`, agent: "test",
+      kind: "exec", tool: "shell", target: "echo ok", content: "echo ok", untrustedInput: false, userIntent: "" });
+    // A later block makes the sandbox unnecessary.
+    assert.equal(calls, 0);
+    store.close();
+  }
+  const store = new WardenStore(":memory:");
+  let calls = 0;
+  const engine = new Engine(store, { stages: {
+    guardrails: () => [{ verdict: "sandbox", label: "guardrail", reason: "check" }],
+    sandbox: () => { calls++; return { verdict: "allow", reason: "clear", evidence: {
+      backend: "static", inspectedFiles: [], changedFiles: [], secretFiles: [], tokenReferences: [], canaries: [],
+      networkAttempts: [], controlFiles: [], obfuscation: [], outsideWorkspace: [], exitCode: null,
+      timedOut: false, executionError: null, labels: [],
+    } }; },
+    canaries: () => [],
+  } });
+  const result = await engine.decide({ source: "replay", sessionId: "sandbox-yes", agent: "test",
+    kind: "exec", tool: "shell", target: "echo ok", content: "echo ok", untrustedInput: false, userIntent: "" });
+  assert.equal(calls, 1);
+  assert.equal(result.verdict, "allow");
+  assert.ok(result.labels.includes("guardrail"));
   store.close();
 });

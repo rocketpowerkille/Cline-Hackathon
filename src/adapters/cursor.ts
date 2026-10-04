@@ -96,12 +96,30 @@ export const cursorAdapter: HostAdapter = {
         if (!tool) throw new HookInputError("Cursor preToolUse input is missing tool_name.");
         return action({ tool, ...mapCursorTool(tool, payload.tool_input) });
       }
+      case "postToolUse": {
+        const tool = text(payload.tool_name);
+        if (!tool) throw new HookInputError("Cursor postToolUse input is missing tool_name.");
+        return { workspaceRoot, action: { ...base, ...mapCursorTool(tool, payload.tool_input), tool,
+          post: true, observedOutput: text(payload.tool_output), content: "" } };
+      }
+      case "afterShellExecution": {
+        const command = text(payload.command);
+        return { workspaceRoot, action: { ...base, kind: "exec", tool: "Shell", target: command,
+          content: "", post: true, observedOutput: text(payload.output) } };
+      }
+      case "afterMCPExecution": {
+        const tool = text(payload.tool_name);
+        return { workspaceRoot, action: { ...base, kind: "mcp", tool,
+          target: `${text(payload.mcp_server_name)}/${tool}`, content: "", post: true,
+          observedOutput: text(payload.result_json) } };
+      }
       default:
         return { workspaceRoot, action: null };
     }
   },
 
   respond(event, decision: Decision | null): HookOutput {
+    if (event === "postToolUse" || event === "afterShellExecution" || event === "afterMCPExecution") return json({});
     const allowed = isAllowed(decision) || decision === null;
     const message = allowed || decision === null ? "" : denialMessage(decision);
 
