@@ -5,6 +5,7 @@ import { Engine } from "../core/engine.js";
 import { wardenStatePath } from "../core/paths.js";
 import type { AgentAction, Decision } from "../core/types.js";
 import { WardenStore } from "../store/database.js";
+import { KeyringSecretStore, keyringService, SecretVault } from "../vault/secrets.js";
 
 export const hookHosts = ["cline", "cursor"] as const;
 export type HookHost = (typeof hookHosts)[number];
@@ -38,7 +39,8 @@ export function isHookHost(value: unknown): value is HookHost {
 
 export function openRepositoryEngine(workspaceRoot: string): OpenEngine {
   const store = new WardenStore(wardenStatePath(workspaceRoot, "warden.db"));
-  const engine = new Engine(store);
+  const vault = new SecretVault(workspaceRoot, store.database, new KeyringSecretStore(keyringService(workspaceRoot)));
+  const engine = new Engine(store, vault);
   return {
     decide: (action) => engine.decide(action),
     close: () => store.close(),

@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -64,6 +64,21 @@ export interface CanaryMatch {
   placeholder: string;
 }
 
+export interface RunTicket {
+  id: string;
+  sessionId: string;
+  keyNames: string[];
+}
+
+export function keyringService(root: string): string {
+  const identity = createHash("sha256").update(path.resolve(root)).digest("hex").slice(0, 16);
+  return `warden:${identity}`;
+}
+
+export function scanWardenCanaries(content: string): string[] {
+  return [...new Set(content.match(/__WARDEN_CANARY__[A-Za-z_][A-Za-z0-9_]*__[a-f0-9]{24}__/g) ?? [])];
+}
+
 export class SecretVault {
   constructor(
     private readonly root: string,
@@ -85,6 +100,20 @@ export class SecretVault {
         name TEXT NOT NULL REFERENCES vault_entries(name),
         granted_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS vault_run_tickets (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        command_json TEXT NOT NULL,
+        selection_json TEXT NOT NULL,
+        key_names_json TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        consumed_at TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS vault_run_tickets_lookup
+      ON vault_run_tickets(command_json, selection_json, consumed_at, expires_at);
     `);
   }
 
@@ -176,26 +205,153 @@ export class SecretVault {
     const known = new Map(this.list().map((entry) => [entry.placeholder, entry.name]));
     const found = new Map<string, CanaryMatch>();
 
-    for (const match of content.matchAll(/__WARDEN_CANARY__[A-Za-z_][A-Za-z0-9_]*__[a-f0-9]{24}__/g)) {
-      const placeholder = match[0];
+    for (const placeholder of scanWardenCanaries(content)) {
       found.set(placeholder, { name: known.get(placeholder) ?? null, placeholder });
     }
 
     return [...found.values()];
   }
 
-  grantEnvironment(sessionId: string): NodeJS.ProcessEnv {
+  grantEnvironment(sessionId: string, only: readonly string[] | null = null): NodeJS.ProcessEnv {
     if (!sessionId.trim()) throw new Error("sessionId is required");
-    const environment: NodeJS.ProcessEnv = {};
-    const names: string[] = [];
+    const selected = this.selectedEntries(only);
+    const environment = this.environmentFor(selected);
+    this.recordGrants(sessionId, selected.map((entry) => entry.name));
+    return environment;
+  }
 
-    for (const entry of this.list()) {
+  run(
+    sessionId: string,
+    command: string,
+    args: readonly string[] = [],
+    options: SpawnOptions = {},
+    only: readonly string[] | null = null,
+  ): ChildProcess {
+    if (!sessionId.trim()) throw new Error("sessionId is required");
+    const selected = this.selectedEntries(only);
+    const injected = this.environmentFor(selected);
+    const child = spawn(command, args, {
+      ...options,
+      env: { ...process.env, ...options.env, ...injected },
+    });
+    child.once("spawn", () => this.recordGrants(sessionId, selected.map((entry) => entry.name)));
+    return child;
+  }
+
+  grantedNames(sessionId: string): string[] {
+    return [...this.database.prepare(`
+      SELECT DISTINCT name
+      FROM vault_grants
+      WHERE session_id = ?
+      ORDER BY name
+    `).iterate(sessionId)].map((row) => String(row.name));
+  }
+
+  issueRunTicket(
+    sessionId: string,
+    command: readonly string[],
+    selection: readonly string[] | null,
+    ttlMs = 30_000,
+  ): string {
+    if (!sessionId.trim()) throw new Error("sessionId is required");
+    if (command.length === 0) throw new Error("run ticket command is required");
+    const entries = this.selectedEntries(selection);
+    const id = randomUUID();
+    const now = new Date();
+    this.database.prepare(`
+      INSERT INTO vault_run_tickets (
+        id, session_id, command_json, selection_json, key_names_json,
+        expires_at, consumed_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)
+    `).run(
+      id,
+      sessionId,
+      JSON.stringify(command),
+      JSON.stringify(selection === null ? null : normalizeNames(selection)),
+      JSON.stringify(entries.map((entry) => entry.name)),
+      new Date(now.getTime() + ttlMs).toISOString(),
+      now.toISOString(),
+    );
+    return id;
+  }
+
+  consumeRunTicket(command: readonly string[], selection: readonly string[] | null): RunTicket {
+    const now = new Date().toISOString();
+    const commandJson = JSON.stringify(command);
+    const selectionValue = JSON.stringify(selection === null ? null : normalizeNames(selection));
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const rows = [...this.database.prepare(`
+        SELECT id, session_id, key_names_json
+        FROM vault_run_tickets
+        WHERE command_json = ?
+          AND selection_json = ?
+          AND consumed_at IS NULL
+          AND expires_at > ?
+        ORDER BY created_at
+        LIMIT 2
+      `).iterate(commandJson, selectionValue, now)];
+      if (rows.length === 0) throw new Error("No valid Warden run ticket for this command");
+      if (rows.length > 1) throw new Error("Ambiguous Warden run ticket; retry the agent command");
+      const row = rows[0]!;
+      this.database.prepare("UPDATE vault_run_tickets SET consumed_at = ? WHERE id = ?").run(now, String(row.id));
+      this.database.exec("COMMIT");
+      return {
+        id: String(row.id),
+        sessionId: String(row.session_id),
+        keyNames: JSON.parse(String(row.key_names_json)) as string[],
+      };
+    } catch (error) {
+      if (this.database.isTransaction) this.database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  runWithTicket(
+    command: string,
+    args: readonly string[],
+    selection: readonly string[] | null,
+    launch: (environment: NodeJS.ProcessEnv) => ChildProcess,
+  ): ChildProcess {
+    const ticket = this.consumeRunTicket([command, ...args], selection);
+    const selected = this.selectedEntries(ticket.keyNames);
+    const child = launch(this.environmentFor(selected));
+    child.once("spawn", () => this.recordGrants(ticket.sessionId, ticket.keyNames));
+    return child;
+  }
+
+  private getEntry(name: string): VaultEntry | undefined {
+    const row = this.database.prepare(`
+      SELECT name, placeholder, source_path, created_at, updated_at
+      FROM vault_entries
+      WHERE name = ?
+    `).get(name);
+    return row ? toVaultEntry(row) : undefined;
+  }
+
+  private selectedEntries(only: readonly string[] | null): VaultEntry[] {
+    const entries = this.list();
+    if (only === null) return entries;
+    const requested = normalizeNames(only);
+    const byName = new Map(entries.map((entry) => [entry.name, entry]));
+    return requested.map((name) => {
+      const entry = byName.get(name);
+      if (!entry) throw new Error(`Unknown vault key: ${name}`);
+      return entry;
+    });
+  }
+
+  private environmentFor(entries: readonly VaultEntry[]): NodeJS.ProcessEnv {
+    const environment: NodeJS.ProcessEnv = {};
+    for (const entry of entries) {
       const value = this.secrets.get(entry.name);
       if (value === undefined) throw new Error(`Secret is missing from the OS keychain: ${entry.name}`);
       environment[entry.name] = value;
-      names.push(entry.name);
     }
+    return environment;
+  }
 
+  private recordGrants(sessionId: string, names: readonly string[]): void {
     const now = new Date().toISOString();
     this.database.exec("BEGIN");
     try {
@@ -208,39 +364,6 @@ export class SecretVault {
       this.database.exec("ROLLBACK");
       throw error;
     }
-
-    return environment;
-  }
-
-  run(
-    sessionId: string,
-    command: string,
-    args: readonly string[] = [],
-    options: SpawnOptions = {},
-  ): ChildProcess {
-    const injected = this.grantEnvironment(sessionId);
-    return spawn(command, args, {
-      ...options,
-      env: { ...process.env, ...options.env, ...injected },
-    });
-  }
-
-  grantedNames(sessionId: string): string[] {
-    return [...this.database.prepare(`
-      SELECT DISTINCT name
-      FROM vault_grants
-      WHERE session_id = ?
-      ORDER BY name
-    `).iterate(sessionId)].map((row) => String(row.name));
-  }
-
-  private getEntry(name: string): VaultEntry | undefined {
-    const row = this.database.prepare(`
-      SELECT name, placeholder, source_path, created_at, updated_at
-      FROM vault_entries
-      WHERE name = ?
-    `).get(name);
-    return row ? toVaultEntry(row) : undefined;
   }
 }
 
@@ -310,6 +433,10 @@ function isCanary(value: string): boolean {
 function isInside(root: string, target: string): boolean {
   const relative = path.relative(root, target);
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function normalizeNames(names: readonly string[]): string[] {
+  return [...new Set(names)].sort();
 }
 
 function toVaultEntry(row: Record<string, unknown>): VaultEntry {

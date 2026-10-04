@@ -144,3 +144,55 @@ test("vault metadata never stores a real secret", () => {
   assert.doesNotMatch(dump, /npm_fake_demo_token/);
   context.close();
 });
+
+test("run tickets are command-bound, selective, single-use, and attributed", () => {
+  const context = fixture();
+  context.vault.add("GITHUB_TOKEN", "ghp_fake_demo_token");
+  context.vault.add("NPM_TOKEN", "npm_fake_demo_token");
+  context.vault.issueRunTicket("cline-session", ["npm", "publish"], ["NPM_TOKEN"]);
+
+  assert.throws(
+    () => context.vault.consumeRunTicket(["npm", "whoami"], ["NPM_TOKEN"]),
+    /No valid Warden run ticket/,
+  );
+  const ticket = context.vault.consumeRunTicket(["npm", "publish"], ["NPM_TOKEN"]);
+  assert.equal(ticket.sessionId, "cline-session");
+  assert.deepEqual(ticket.keyNames, ["NPM_TOKEN"]);
+  assert.deepEqual(context.vault.grantEnvironment(ticket.sessionId, ticket.keyNames), {
+    NPM_TOKEN: "npm_fake_demo_token",
+  });
+  assert.deepEqual(context.vault.grantedNames("cline-session"), ["NPM_TOKEN"]);
+  assert.throws(
+    () => context.vault.consumeRunTicket(["npm", "publish"], ["NPM_TOKEN"]),
+    /No valid Warden run ticket/,
+  );
+  context.close();
+});
+
+test("expired and ambiguous run tickets fail closed", () => {
+  const context = fixture();
+  context.vault.add("NPM_TOKEN", "npm_fake_demo_token");
+  context.vault.issueRunTicket("expired", ["npm", "publish"], null, -1);
+  assert.throws(
+    () => context.vault.consumeRunTicket(["npm", "publish"], null),
+    /No valid Warden run ticket/,
+  );
+
+  context.vault.issueRunTicket("one", ["npm", "publish"], null);
+  context.vault.issueRunTicket("two", ["npm", "publish"], null);
+  assert.throws(
+    () => context.vault.consumeRunTicket(["npm", "publish"], null),
+    /Ambiguous Warden run ticket/,
+  );
+  context.close();
+});
+
+test("run ticket metadata stores key names but never values", () => {
+  const context = fixture();
+  context.vault.add("NPM_TOKEN", "npm_fake_demo_token");
+  context.vault.issueRunTicket("session", ["npm", "publish"], null);
+  const dump = JSON.stringify([...context.database.prepare("SELECT * FROM vault_run_tickets").iterate()]);
+  assert.match(dump, /NPM_TOKEN/);
+  assert.doesNotMatch(dump, /npm_fake_demo_token/);
+  context.close();
+});

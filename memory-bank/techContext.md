@@ -65,4 +65,17 @@ Every optional integration requires an offline fallback.
 - `@napi-rs/keyring` 2.1.0 is installed as a runtime dependency.
 - Production storage uses synchronous `Entry(service, account)` operations.
 - Tests use `MemorySecretStore`; they do not access Windows Credential Manager, macOS Keychain, or Linux credential stores.
-- Vault metadata is stored in `vault_entries` and `vault_grants` tables created by the isolated module until shared-schema integration.
+- Vault metadata uses shared `vault_entries`, `vault_grants`, and `vault_run_tickets` tables.
+
+## Current CLI
+
+```text
+npm.cmd run warden -- vault add <NAME>
+npm.cmd run warden -- vault seed [.env]
+npm.cmd run warden -- vault list
+npm.cmd run warden -- run [--only NAME[,NAME...]] -- <command> [args...]
+```
+
+- The installed `warden` bin points at `bin/warden.mjs`, which registers `tsx` and loads the TypeScript CLI.
+- `vault add` reads the value from hidden TTY input; non-interactive input may be piped over stdin.
+- `warden run` requires a live ticket issued by an allowed agent action.
