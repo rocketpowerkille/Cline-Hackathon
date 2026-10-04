@@ -2,41 +2,59 @@
 
 ## Current focus
 
-Segment 01 (Agent Hooks) is complete. Next is Segment 02 (Guardrails).
+Segments 01 (Agent Hooks) and 05 (Secret Vault) are combined and verified on `segment-05-vault`. Segment 02 is next.
 
 ## Repository state
 
-- Node 24.20.0 locally; minimum remains 22.13.
-- PowerShell blocks `npm.ps1`; use `npm.cmd`. Run `npm ci` first on a fresh checkout (node_modules is not committed).
-- `npm ci` warns that esbuild's postinstall is not in `allowScripts`; tsx still works.
+- Minimum Node version remains 22.13.
+- PowerShell blocks `npm.ps1`; use `npm.cmd`.
+- Run `npm ci` on a fresh checkout because `node_modules` is not committed.
+- `npm ci` may warn that esbuild's postinstall is not in `allowScripts`; `tsx` still works.
 
-## Recent changes (Segment 01)
+## Recent changes
 
-- `src/adapters/common.ts`: `HostAdapter` contract, `HookInputError` (content-free messages), JSON/BOM/UTF-16 input decoding.
-- `src/adapters/cline.ts`: Cline file-hook adapter (PreToolUse, UserPromptSubmit, TaskStart) and tool->kind mapping.
-- `src/adapters/cursor.ts`: Cursor adapter (beforeShellExecution, beforeMCPExecution, beforeReadFile, beforeSubmitPrompt, preToolUse) with per-event response schemas.
-- `src/hooks/run.ts`: `runHook()` = parse -> normalize -> `Engine.decide` -> translate; fails open; injectable `EngineFactory`.
-- `src/hooks/main.ts`: stdio entry `tsx src/hooks/main.ts <cline|cursor> [event]`.
-- Store: `busy_timeout=5000` and WAL for concurrent hook processes.
-- Removed a stray patch fragment that had been pasted into `.gitignore`.
-- Host contracts recorded in `memory-bank/hookContracts.md`.
+### Segment 01
+
+- Added the shared `HostAdapter` contract, safe hook input errors, and UTF-8/UTF-16 BOM decoding.
+- Added Cline adapters for PreToolUse, UserPromptSubmit, and TaskStart.
+- Added Cursor adapters for beforeShellExecution, beforeMCPExecution, beforeReadFile, beforeSubmitPrompt, and preToolUse.
+- Added fail-open hook routing and the stdio entry point.
+- Enabled SQLite WAL and a busy timeout for concurrent hook processes.
+- Recorded verified contracts in `memory-bank/hookContracts.md`.
+
+### Segment 05
+
+- Added native keychain and in-memory secret-store adapters.
+- Added `.env` seeding with randomized Warden canaries.
+- Added canary scanning, session grant records, and child-process-only secret injection.
+- Added repository containment checks for seeded environment files.
 
 ## Current decisions
 
-- Event name may be passed by the installer (argv) and falls back to the payload's `hookName`/`hook_event_name`.
-- Workspace root comes from the payload's workspace roots, then `CURSOR_PROJECT_DIR`, then cwd; the ledger is `<root>/.warden/warden.db`.
-- All non-allow verdicts become Cline `cancel` / Cursor `deny`; `ask` is resolved inside the engine (Segment 08 approvals), never delegated to hosts.
-- Unknown tools map to `mcp` so they remain under policy; pure chat/context tools bypass the engine.
-- Adapters always set `untrustedInput: false` and empty intent for tool calls; trust tracking (Segment 03) derives taint from the ledger.
-- Hook stderr only prints `HookInputError` messages or error class names, never raw input.
+- Event names may come from installer arguments and fall back to the host payload.
+- Workspace root comes from payload roots, then `CURSOR_PROJECT_DIR`, then cwd.
+- Host adapters convert all non-allow decisions to cancel/deny; approval resolution belongs inside the engine.
+- Unknown tools map to `mcp`; pure chat/context tools bypass the engine.
+- Hook stderr never prints raw input.
+- Vault storage is behind `SecretStore`; production uses the OS keychain and tests use memory.
+- Vault tables currently self-initialize for isolation and should move into shared migrations during integration.
+- Automated tests never write to the developer's real keychain.
 
 ## Next step
 
-Segment 02: guardrails module returning small results/labels; engine composes them (block/ask/sandbox verdicts for control-file writes, secret paths, exfil-shaped exec/net).
+Proceed with Segment 02. Vault engine canary enforcement and CLI commands remain integration work.
+
+## Verification
+
+- `npm.cmd test`: 29 passed, 0 failed.
+- `npm.cmd run typecheck`: passed.
+- `git diff --check`: passed.
+- `npm.cmd audit --omit=dev`: 0 vulnerabilities.
 
 ## Active risks
 
-- Installer (Segment 08) must write `.clinerules/hooks/PreToolUse.ps1` on Windows and extensionless scripts elsewhere, and `.cursor/hooks.json`; wrappers must always emit JSON.
-- Hook process startup via tsx is ~300 ms; acceptable for MVP, may need a compiled build later.
-- Cursor `ask` is not enforced for `preToolUse`; Warden already uses `deny`.
-- Ollama System One compatibility is still to be tested in Segment 04.
+- Installer must generate Cline PowerShell/Unix wrappers and Cursor configuration in Segment 08.
+- Hook startup through `tsx` is roughly 300 ms.
+- Cursor `ask` is not reliably enforced; Warden uses deny at the host boundary.
+- Ollama System One compatibility remains for Segment 04.
+- The real `@napi-rs/keyring` backend is not exercised by automated tests.
