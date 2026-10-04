@@ -31,7 +31,7 @@ On Windows the real shell script is executed with Git Bash. On Unix it uses `/bi
 - `.env` is vault-seeded into an in-memory store and rewritten to a canary.
 - Cursor's external issue result produces an injection flag and sticky session taint.
 - The first `AGENTS.md` write produces a control-file hold.
-- Until Dashboard exists, the demo prints an explicit user-approval line and replays the write through a demo-only guardrail override that removes only the `control-file` finding.
+- Until the existing Dashboard approval waiter is connected to the engine, the demo prints an explicit user-approval line and replays the write through a demo-only guardrail override that removes only the `control-file` finding.
 - The later Cline session inherits taint by reading `AGENTS.md`.
 - Executing `scripts/setup.sh` invokes the real sandbox stage and must produce a block plus a `sandbox_runs` ledger row.
 - The localhost attacker must receive zero requests or the demo fails loudly.
@@ -42,4 +42,4 @@ The terminal prints a colorized one-line trace with statuses including FAIL, FLA
 
 ## Deferred Part 3
 
-The responder is intentionally not invoked yet. It will be added after this demo branch is merged.
+The responder is implemented but intentionally not invoked yet. It will be added as demo Part 3 after this branch is merged.

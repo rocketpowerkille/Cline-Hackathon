@@ -2,7 +2,7 @@
 
 ## Current focus
 
-Segment 04 risk scoring and schema-v5 sandbox evidence persistence are in this working tree, along with separate CLI status/score modules. Do not touch dashboard/responder/demo folders: parallel branches own them.
+All segment branches are merged into `segment-demo-chain`, including risk scoring, responder, dashboard, installer, and demo Parts 1–2. Current work is merge reconciliation and final integration boundaries.
 
 ## Repository state
 
@@ -41,6 +41,22 @@ Segment 04 risk scoring and schema-v5 sandbox evidence persistence are in this w
 - Added `README.md` with installation and usage instructions.
 - Added `bin/hook.mjs`; local startup benchmark was about 175 ms versus about 206 ms for the previous path.
 
+### Segment 07 Responder
+
+- Added deterministic investigation/remediation, mock npm/GitHub rotation providers, safe snapshot restore/quarantine, idempotent response state, and incident reports.
+- Added two restricted optional Cline SDK sessions and a standalone responder CLI.
+
+### Segment 08A Dashboard
+
+- Added a loopback-only authenticated dashboard, decision/session timeline, risk/sandbox evidence, approval endpoints/waiter, and incident listing.
+- Dashboard approval is not yet connected to the engine or root CLI.
+
+### Demo Parts 1 and 2
+
+- Added a fake failing Node repo, poisoned issue #42, localhost attacker, replay fixture, and colored trace.
+- Part 1 proves the fake token leaks without Warden.
+- Part 2 replays real Cursor/Cline payload shapes through `runHook`; Warden carries taint across days, sandboxes the script, blocks it, and sends nothing to the attacker.
+
 ## Current decisions
 
 - Session and file taint are sticky. Trusted edits do not automatically clear provenance.
@@ -54,12 +70,13 @@ Segment 04 risk scoring and schema-v5 sandbox evidence persistence are in this w
 
 ## Next step
 
-Segment 07 responder and Segment 08A Dashboard are being handled on parallel branches. Remaining risk work: live model smoke tests and calibration, robust handling of concurrent budget updates, and broader secret-safe local-model gating.
+Connect dashboard approval waiting to `Engine.decide`, add root CLI dispatch for dashboard/respond, then add responder recovery as demo Part 3.
 
 ## Remaining work
 
 - Improve observation of dynamically generated shell paths, writes performed inside scripts, and broad file listing/search output.
-- Implement responder, dashboard approvals, and offline demo on their respective branches.
+- Wire the implemented responder/dashboard commands into the root CLI and connect approval waiting to the engine.
+- Add responder recovery to demo Part 3.
 - Add explicit review/trust-reset semantics rather than auto-clearing taint.
 
 ## Install manual verification / packaging
@@ -72,7 +89,7 @@ Segment 07 responder and Segment 08A Dashboard are being handled on parallel bra
 
 ## Verification
 
-- `npm.cmd test`: 99 passed, 0 failed, 3 Docker-only tests skipped.
+- `npm.cmd test`: 117 passed, 0 failed, 0 skipped.
 - `npm.cmd run typecheck`: passed.
 - `git diff --check`: passed.
 - `npm.cmd audit --omit=dev`: 0 vulnerabilities.
@@ -82,5 +99,6 @@ Segment 07 responder and Segment 08A Dashboard are being handled on parallel bra
 - Cline `cancel` aborts the whole task; approval must be resolved before replying.
 - Cursor `ask` is not reliably enforced.
 - Guardrail and trust shell matching remain lexical and visibility-limited.
-- Docker runtime tests skip when the daemon/image is unavailable.
+- Docker tests require a running daemon and cached `node:22-alpine`; the full merged validation ran them successfully.
+- `@cline/sdk@0.0.90` currently adds documented transitive audit findings; deterministic responder mode does not load it.
 - The real OS keychain adapter is not exercised by automated tests.
