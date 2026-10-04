@@ -1,0 +1,37 @@
+# System Patterns
+
+## Primary flow
+
+```text
+agent hook -> adapter -> AgentAction -> Engine.decide -> Decision -> adapter response
+                                      -> shared SQLite ledger
+```
+
+## Engine order
+
+1. Trust tracking
+2. Guardrails
+3. Sandbox when requested by a guardrail
+4. Vault canary scan
+5. Risk score and session budget
+6. Write provenance
+7. Human approval resolution
+8. Decision persistence
+
+Only the engine combines stage results or changes verdict precedence.
+
+## Boundaries
+
+- Adapters validate host input, normalize it, and translate the final verdict.
+- Policy modules return small results and labels; they do not write host-specific responses.
+- The store owns SQL and transactions.
+- Real secrets are referenced by keychain identifiers and never persisted in SQLite.
+- The responder runbook is deterministic; an SDK agent may invoke it but does not redefine it.
+
+## Reliability patterns
+
+- Hook boundary catches failures and returns host-specific allow output.
+- Approval timeout is a policy result and returns deny.
+- Optional services use short timeouts and deterministic fallbacks.
+- Paths retain an original representation for logs and a canonical slash-separated representation for matching.
+- Tests use temporary or in-memory state and require no network or credentials.
