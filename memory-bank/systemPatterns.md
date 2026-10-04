@@ -20,6 +20,19 @@ agent hook -> adapter -> AgentAction -> Engine.decide -> Decision -> adapter res
 
 Only the engine combines stage results or changes verdict precedence.
 
+## Hook layer (Segment 01)
+
+```text
+src/hooks/main.ts  (stdin bytes -> decodeHookInput -> runHook -> stdout JSON, exit 0)
+src/hooks/run.ts   (adapter.eventName -> adapter.normalize -> EngineFactory(root).decide -> adapter.respond)
+src/adapters/{common,cline,cursor}.ts
+```
+
+- `HostAdapter.normalize` returns `{action | null, workspaceRoot}`; `null` skips the engine and returns host allow.
+- `HostAdapter.respond(event, null)` is the fail-open output; it is always valid host JSON.
+- `EngineFactory` is injectable so tests can produce non-allow verdicts without real policy.
+- Host contract details live in `hookContracts.md`.
+
 ## Boundaries
 
 - Adapters validate host input, normalize it, and translate the final verdict.

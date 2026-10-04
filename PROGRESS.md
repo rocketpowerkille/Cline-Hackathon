@@ -2,33 +2,32 @@
 
 | Segment | Status | Verification |
 | --- | --- | --- |
-| 00 Foundation | Complete | 4 tests passed; strict typecheck passed |
-| 01 Agent Hooks | Not started | — |
+| 00 Foundation | Complete | Verified in combined suite |
+| 01 Agent Hooks | Complete | Verified in combined suite |
 | 02 Guardrails | Not started | — |
 | 03 Trust Tracking | Not started | — |
 | 04 Risk Scoring | Not started | — |
-| 05 Secret Vault | Complete on `segment-05-vault` | 11 tests passed; strict typecheck passed |
+| 05 Secret Vault | Complete; integration pending | Verified in combined suite |
 | 06 Sandbox | Not started | — |
 | 07 Cline Responder | Not started | — |
 | 08 Dashboard + Install | Not started | — |
 
 ## Current scope
 
-Segment 05 is implemented independently on `segment-05-vault`. Engine and CLI integration are deferred until the parallel Segment 01–02 work is merged.
+Segments 01 and 05 are combined on `segment-05-vault`. The hook adapters and standalone vault are implemented; the engine still allows everything until Segment 02 policy work begins.
 
 ## Deliberate shortcuts
 
 - No security rule is active yet.
-- Vault integration with `Engine` and `src/cli/warden.ts` is intentionally deferred to avoid conflicts with parallel work.
-- The existing empty `.clinerule` is untouched.
+- Vault integration with `Engine`, shared schema migrations, and `src/cli/warden.ts` is deferred.
+- Hook wrapper scripts and installer arrive in Segment 08.
 
-## Segment 00 result
+## Segment 01 result
 
-- Added strict TypeScript, ESM, and Node 22.13+ configuration.
-- Added core action and decision contracts.
-- Added path helpers, initial SQLite schema, transactional ledger, and allow-only engine.
-- Added tests for path handling, redacted storage, persistence, and engine logging.
-- Verified with `npm.cmd test`, `npm.cmd run typecheck`, and `git diff --check`.
+- Added Cline and Cursor adapters for the required hook events.
+- Added `runHook` and the stdio entry `src/hooks/main.ts <cline|cursor> [event]`, failing open with valid host JSON.
+- Enabled SQLite WAL and busy timeout for concurrent hook processes.
+- Added host-payload fixtures plus adapter, routing, fail-open, shared-ledger, and spawned-process tests.
 
 ## Segment 05 result
 
@@ -38,4 +37,10 @@ Segment 05 is implemented independently on `segment-05-vault`. Engine and CLI in
 - Added session grant tracking without storing real values in SQLite.
 - Added child-process-only environment injection for future `warden run` wiring.
 - Added an in-memory secret store so tests remain offline and never touch the real keychain.
-- Verified with 11 passing tests, strict typechecking, `git diff --check`, and a zero-vulnerability runtime audit.
+
+## Merge verification
+
+- `npm.cmd test`: 29 passed, 0 failed.
+- `npm.cmd run typecheck`: passed.
+- `git diff --check`: passed.
+- `npm.cmd audit --omit=dev`: 0 vulnerabilities.

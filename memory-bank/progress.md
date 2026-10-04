@@ -2,16 +2,16 @@
 
 ## Current status
 
-Segment 05 is complete on `segment-05-vault`. Integration is paused while Segment 01–02 proceeds in parallel.
+Segments 00, 01, and the standalone portion of 05 are complete and verified together. Segment 02 is next.
 
 ## Milestones
 
 - [x] Segment 00 — Foundation
-- [ ] Segment 01 — Agent Hooks
+- [x] Segment 01 — Agent Hooks
 - [ ] Segment 02 — Guardrails
 - [ ] Segment 03 — Trust Tracking
 - [ ] Segment 04 — Risk Scoring
-- [x] Segment 05 — Secret Vault (isolated branch; integration pending)
+- [x] Segment 05 — Secret Vault (engine/schema/CLI integration pending)
 - [ ] Segment 06 — Sandbox
 - [ ] Segment 07 — Cline Responder
 - [ ] Segment 08 — Dashboard + Install
@@ -20,42 +20,50 @@ Segment 05 is complete on `segment-05-vault`. Integration is paused while Segmen
 
 ## What works
 
-- Strict TypeScript ESM project configuration.
-- Shared `AgentAction`, verdict, decision, and risk contracts.
-- Cross-platform workspace and `.warden` path construction.
-- Initial SQLite sessions, actions, decisions, and approvals schema.
-- Transactional action and decision recording.
-- Secret-like environment assignments are redacted from stored previews.
-- The allow-only engine skeleton records each decision in the shared ledger.
+- Strict TypeScript ESM project, shared contracts, and portable paths.
+- SQLite ledger with redacted previews, WAL, and a busy timeout.
+- Allow-only engine that records decisions.
+- Cline and Cursor hook adapters normalize host payloads and return valid host responses.
+- Hook routing fails open and handles UTF-8/UTF-16 BOM input.
+- Both hosts write to the repository's shared `.warden/warden.db`.
 - `.env` values can be moved into a `SecretStore` and replaced by randomized canaries.
-- Production secret storage uses `@napi-rs/keyring`; tests use an in-memory adapter.
-- Canary scanning detects both known vault placeholders and copied Warden-shaped placeholders.
-- Session grants record which key names were injected without storing their values.
-- Child processes receive real values without mutating the parent environment.
+- Production secret storage uses `@napi-rs/keyring`; tests use memory.
+- Canary scanning detects known and copied Warden placeholders.
+- Session grants record injected key names without persisting values.
+- Child processes receive secrets without mutating the parent environment.
 - Environment files outside the protected repository are rejected.
-- `npm.cmd test`: 11 passed, 0 failed.
-- `npm.cmd run typecheck`: passed.
 
 ## Remaining work
 
-Segments 01–04 and 06–08 remain. Segment 05 still needs shared engine, schema-migration, and CLI wiring after parallel work merges.
+Segments 02–04 and 06–08, CLI integration, offline demo, and Segment 05 engine/shared-schema wiring.
 
 ## Mocks and shortcuts
 
-- The Segment 00 engine intentionally returns `allow` for every action. Guardrails begin in Segment 02.
-- The real OS keychain is not exercised by automated tests to avoid modifying developer credentials.
-- Vault tables currently self-initialize in `SecretVault`; integration should move them into the shared migration path.
-- Engine canary blocking and CLI argument handling are deliberately deferred to avoid parallel merge conflicts.
+- Engine still returns `allow`; adapter tests use a fake engine for non-allow verdicts.
+- Hook scripts and installer are deferred to Segment 08.
+- No Cline SDK plugin adapter yet; file hooks only.
+- Automated tests do not touch the real OS keychain.
+- Vault tables currently self-initialize rather than using the shared migration path.
+- Engine canary blocking and CLI argument handling are deferred.
 
 ## Known issues
 
-- Cline Windows hook behavior must be validated during Segment 01.
-- Cursor `ask` enforcement can depend on Cursor mode/version.
+- Hook startup through `tsx` costs roughly 300 ms.
+- `npm ci` may print an esbuild `allowScripts` warning.
+- Cursor `ask` enforcement depends on host mode/version, so Warden uses deny.
 
 ## Decision evolution
 
-- Adopted Node 22.13 as the effective minimum for stable built-in SQLite availability.
-- Chose redacted previews plus content hashes for the action ledger.
-- Use `npm.cmd` for local Windows validation because PowerShell blocks `npm.ps1`.
-- Added `SecretStore` as the vault boundary so deterministic tests do not depend on an OS credential service.
-- Randomized placeholders use `__WARDEN_CANARY__<NAME>__<24 hex>__` and are security signals, not secrets.
+- Node 22.13 minimum for stable `node:sqlite`.
+- Redacted previews plus SHA-256 hashes in the ledger.
+- Use `npm.cmd` for Windows validation.
+- Hosts never resolve `ask`; all non-allow verdicts are cancel/deny at the adapter boundary.
+- `SecretStore` isolates OS keychain access from deterministic tests.
+- Canary format is `__WARDEN_CANARY__<NAME>__<24 hex>__`.
+
+## Verification
+
+- `npm.cmd test`: 29 passed, 0 failed.
+- `npm.cmd run typecheck`: passed.
+- `git diff --check`: passed.
+- `npm.cmd audit --omit=dev`: 0 vulnerabilities.

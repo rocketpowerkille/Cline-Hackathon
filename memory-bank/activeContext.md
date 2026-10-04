@@ -2,50 +2,59 @@
 
 ## Current focus
 
-Segment 05 is complete on the isolated `segment-05-vault` branch. Work is paused before integration, commit, or push.
+Segments 01 (Agent Hooks) and 05 (Secret Vault) are combined and verified on `segment-05-vault`. Segment 02 is next.
 
 ## Repository state
 
-- The repository began empty except for an empty `.clinerule`.
-- The local runtime is Node 24.15.0, compatible with the Node 22.13 minimum.
-- PowerShell blocks `npm.ps1`; use `npm.cmd` in Windows validation commands.
+- Minimum Node version remains 22.13.
+- PowerShell blocks `npm.ps1`; use `npm.cmd`.
+- Run `npm ci` on a fresh checkout because `node_modules` is not committed.
+- `npm ci` may warn that esbuild's postinstall is not in `allowScripts`; `tsx` still works.
 
 ## Recent changes
 
-- Added strict TypeScript and ESM project configuration.
-- Added normalized action, verdict, decision, and risk contracts.
-- Added portable workspace and `.warden` path helpers.
-- Added the initial `node:sqlite` schema and transactional ledger writer.
-- Added an allow-only engine skeleton that logs every decision.
-- Added foundation tests for paths, redaction, persistence, and engine logging.
+### Segment 01
+
+- Added the shared `HostAdapter` contract, safe hook input errors, and UTF-8/UTF-16 BOM decoding.
+- Added Cline adapters for PreToolUse, UserPromptSubmit, and TaskStart.
+- Added Cursor adapters for beforeShellExecution, beforeMCPExecution, beforeReadFile, beforeSubmitPrompt, and preToolUse.
+- Added fail-open hook routing and the stdio entry point.
+- Enabled SQLite WAL and a busy timeout for concurrent hook processes.
+- Recorded verified contracts in `memory-bank/hookContracts.md`.
+
+### Segment 05
+
 - Added native keychain and in-memory secret-store adapters.
 - Added `.env` seeding with randomized Warden canaries.
 - Added canary scanning, session grant records, and child-process-only secret injection.
+- Added repository containment checks for seeded environment files.
 
 ## Current decisions
 
-- Effective minimum Node version is 22.13 so `node:sqlite` does not require an experimental flag.
-- Only approved development dependencies are introduced during Segment 00.
-- The ledger stores a redacted content preview and SHA-256 hash, not arbitrary raw content.
-- `Engine` is the sole decision compositor; adapters only normalize and translate.
-- Future segment files are created only when their implementation begins.
-- Vault tables are created by the vault module for parallel isolation; they can move into shared schema migrations during integration.
-- Vault tests use only the in-memory store and obviously fake values; no real OS credentials are created.
+- Event names may come from installer arguments and fall back to the host payload.
+- Workspace root comes from payload roots, then `CURSOR_PROJECT_DIR`, then cwd.
+- Host adapters convert all non-allow decisions to cancel/deny; approval resolution belongs inside the engine.
+- Unknown tools map to `mcp`; pure chat/context tools bypass the engine.
+- Hook stderr never prints raw input.
+- Vault storage is behind `SecretStore`; production uses the OS keychain and tests use memory.
+- Vault tables currently self-initialize for isolation and should move into shared migrations during integration.
+- Automated tests never write to the developer's real keychain.
 
 ## Next step
 
-Wait for the parallel Segment 01–02 work, then integrate the vault with the shared schema, engine canary stage, and CLI commands.
+Proceed with Segment 02. Vault engine canary enforcement and CLI commands remain integration work.
 
 ## Verification
 
-- `npm.cmd test`: 11 passed, 0 failed.
+- `npm.cmd test`: 29 passed, 0 failed.
 - `npm.cmd run typecheck`: passed.
 - `git diff --check`: passed.
 - `npm.cmd audit --omit=dev`: 0 vulnerabilities.
 
 ## Active risks
 
-- Cline Windows hook documentation and current `.ps1` discovery behavior are inconsistent; Segment 01 needs fixtures and a capability-oriented installer design.
-- Cursor may ignore `ask` in some Auto-review configurations; `deny` remains the reliable enforcement path.
-- Exact local Ollama System One compatibility will be tested in Segment 04 rather than assumed.
-- `@napi-rs/keyring` behavior is adapter-tested by type contract only; automated tests intentionally avoid writing to the developer's real keychain.
+- Installer must generate Cline PowerShell/Unix wrappers and Cursor configuration in Segment 08.
+- Hook startup through `tsx` is roughly 300 ms.
+- Cursor `ask` is not reliably enforced; Warden uses deny at the host boundary.
+- Ollama System One compatibility remains for Segment 04.
+- The real `@napi-rs/keyring` backend is not exercised by automated tests.

@@ -1,0 +1,13 @@
+{
+  "conversation_id": "conv-second-session",
+  "generation_id": "gen-1",
+  "model": "claude-sonnet",
+  "hook_event_name": "beforeShellExecution",
+  "cursor_version": "1.7.2",
+  "workspace_roots": ["__WORKSPACE__"],
+  "user_email": null,
+  "transcript_path": null,
+  "command": "npm run setup",
+  "cwd": "__WORKSPACE__",
+  "sandbox": false
+}
