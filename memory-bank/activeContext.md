@@ -2,7 +2,7 @@
 
 ## Current focus
 
-Segments 00, 01, 02, 05, and the standalone 06 sandbox are merged on `main`. Next: connect guardrail `sandbox` verdicts to `shadowRun()` (wiring list below), then Segment 03 (Trust Tracking). Wait for the user's go-ahead.
+Segment 08 is split into 08A Dashboard and 08B Install. Install is complete on `segment-08-install`; Dashboard remains separate. Next core work remains sandbox wiring, then Segment 03 Trust Tracking.
 
 ### Segment 02
 
@@ -52,6 +52,15 @@ Segments 00, 01, 02, 05, and the standalone 06 sandbox are merged on `main`. Nex
 - Added fake curl/wget wrappers, file manifests, canary scans, control-file change detection, and timeout cleanup.
 - Added broader secret exclusion/redaction before the shadow copy is mounted.
 
+### Segment 08B Install
+
+- Added `warden init [--seed-env]`, `warden uninstall`, and `warden doctor`.
+- Added PowerShell Cline wrappers on Windows and executable extensionless wrappers on Unix.
+- Added project-local Cursor wrappers plus merged `preToolUse` and `beforeSubmitPrompt` entries.
+- Added `.warden/install.json` ownership metadata with fixed-event and hash-checked uninstall behavior.
+- Added idempotency, existing-hook preservation, malicious-manifest containment, duplicate Cursor-entry, Linux generation, CLI-process, and generated-wrapper tests.
+- Added `bin/hook.mjs`; local benchmark was about 175 ms versus about 206 ms for the prior loader path.
+
 ## Current decisions
 
 - Event names may come from installer arguments and fall back to the host payload.
@@ -75,10 +84,15 @@ Segments 00, 01, 02, 05, and the standalone 06 sandbox are merged on `main`. Nex
 - Missing Docker, daemon failure, missing image, or unsafe image environment selects static fallback.
 - Sandbox timeouts, execution errors, and outside-workspace script references fail closed.
 - `shadowRun` exposes a result callback for future ledger integration without coupling to the store.
+- Installer removal paths are derived from fixed supported events; manifest paths are never trusted directly.
+- Existing Cline hooks are never overwritten or automatically chained.
+- Cursor commands reference stable project-local wrappers, avoiding absolute path quoting in hooks.json.
+- Uninstall preserves modified wrappers and keeps `.warden/` ignored whenever database, incident, or other state remains.
+- Plain `init` and `doctor` do not open the database/keychain; only `init --seed-env` opens the vault.
 
 ## Next step
 
-Connect guardrail `sandbox` findings to `shadowRun()` via a new `sandbox` engine stage, then start Segment 03 (Trust Tracking).
+Connect guardrail `sandbox` findings to `shadowRun()` via a new `sandbox` engine stage, then start Segment 03. Dashboard remains tracked separately as 08A.
 
 ## Remaining Segment 06 wiring
 
@@ -95,7 +109,7 @@ Segment 02 is now available; remaining steps:
 
 ## Verification
 
-- `npm.cmd test`: 74 passed, 0 failed, 3 Docker-only tests skipped (after the Segment 02 merge).
+- `npm.cmd test`: 89 passed, 0 failed, 3 Docker-only tests skipped.
 - `npm.cmd run typecheck`: passed.
 - `git diff --check`: passed.
 - `npm.cmd audit --omit=dev`: 0 vulnerabilities.
@@ -103,8 +117,9 @@ Segment 02 is now available; remaining steps:
 
 ## Active risks
 
-- Installer must generate Cline PowerShell/Unix wrappers and Cursor configuration in Segment 08.
-- Hook startup through `tsx` is roughly 300 ms.
+- Manual verification with the installed Cline version is still required because Cline's checked-in README says Windows is unsupported while verified current source behavior discovers `.ps1`.
+- This hackathon source-checkout install requires `npm install`, including the approved `tsx` dev dependency. A production package should compile TypeScript to JavaScript.
+- Existing Cline hook filename collisions are reported rather than composed; a future dispatcher would be needed to chain hooks without modifying user files.
 - Cursor `ask` is not reliably enforced; Warden uses deny at the host boundary.
 - Cline `cancel` aborts the whole task; per-call `skip` needs an SDK plugin adapter.
 - Guardrail shell matching is lexical; variables, encoded commands, and scripts are not followed.

@@ -18,6 +18,7 @@ Warden adds memory and response to agent security:
 ## Intended experience
 
 - Installation is one command.
+- Installation preserves existing hooks, is safe to repeat, has a doctor command, and can be undone without deleting user-owned configuration.
 - Normal work stays quiet and fast.
 - Decisions have short reasons suitable for a live demo.
 - Sensitive actions ask for one-click approval when the dashboard is available.

@@ -2,7 +2,7 @@
 
 ## Current status
 
-Segments 00, 01, 02, 05, and the standalone Segment 06 sandbox are complete and verified together. Next: wire guardrail `sandbox` verdicts to `shadowRun()`, then Segment 03.
+Segments 00, 01, 02, 05, 06, and 08B Install are complete and verified. Segment 08 is split: 08A Dashboard remains. Next core work is sandbox engine wiring, then Segment 03.
 
 ## Milestones
 
@@ -14,7 +14,8 @@ Segments 00, 01, 02, 05, and the standalone Segment 06 sandbox are complete and 
 - [x] Segment 05 — Secret Vault
 - [x] Segment 06 — Sandbox (engine/guardrail wiring pending)
 - [ ] Segment 07 — Cline Responder
-- [ ] Segment 08 — Dashboard + Install
+- [ ] Segment 08A — Dashboard
+- [x] Segment 08B — Install
 - [ ] CLI integration
 - [ ] Offline demo
 
@@ -42,10 +43,23 @@ Segments 00, 01, 02, 05, and the standalone Segment 06 sandbox are complete and 
 - Static sandbox fallback catches secret-file access, token environment use, canaries, network attempts, encoding tricks, control-file changes, and outside-workspace scripts.
 - Docker shadow execution uses a sanitized throwaway copy, fake curl/wget logging, no network, no host application environment, and resource/time limits.
 - Docker never pulls images during a hook and falls back to static inspection when unavailable.
+- `warden init`, `doctor`, and `uninstall` pass real CLI-process tests in temporary repositories.
+- Init generates Windows/Linux Cline hooks, merges Cursor arrays, adds `.warden/` to Git ignore, and optionally seeds `.env`.
+- Install is idempotent and preserves existing or modified hooks.
+- Uninstall removes only fixed, Warden-owned, hash-matching files and keeps state ignored when state remains.
+- Generated Cline and Cursor wrappers both pass JSON stdio process tests.
 
 ## Remaining work
 
-Segments 03–04 and 07–08, sandbox engine/ledger wiring, remaining CLI commands, and the offline demo.
+Segments 03–04, 07, 08A Dashboard, sandbox engine/ledger wiring, remaining CLI commands, and the offline demo.
+
+### Segment 08B remaining verification / packaging
+
+- [ ] Manually verify `.ps1` discovery with the actual installed Cline version on Windows.
+- [ ] Manually enable Cline Hooks in Feature Settings; repository installation cannot toggle it.
+- [ ] Add CI execution of Unix wrappers on a real Linux runner.
+- [ ] Compile TypeScript for a distributable package so runtime hooks do not depend on the source checkout's `tsx` dev dependency.
+- [ ] Decide whether a future dispatcher should compose occupied Cline event filenames; current behavior safely skips and reports them.
 
 ### Segment 06 wiring checklist
 
@@ -63,7 +77,7 @@ Segments 03–04 and 07–08, sandbox engine/ledger wiring, remaining CLI comman
 - Trust is `action.untrustedInput` (adapters always set false) until Segment 03.
 - `sandbox` and `ask` verdicts reach hosts as cancel/deny until Segments 06/08.
 - Risk fields in decisions are zero until Segment 04.
-- Hook scripts and installer are deferred to Segment 08.
+- Existing Cline hook files cannot be merged through Cline's one-file-per-event interface; doctor reports these collisions as errors.
 - No Cline SDK plugin adapter yet; file hooks only.
 - Automated tests do not touch the real OS keychain.
 - Automated tests use memory storage; the native keychain needs one manual smoke test per platform.
@@ -73,7 +87,7 @@ Segments 03–04 and 07–08, sandbox engine/ledger wiring, remaining CLI comman
 
 ## Known issues
 
-- Hook startup through `tsx` costs roughly 300 ms.
+- Dedicated `bin/hook.mjs` startup measured about 175 ms locally; production packaging still needs compiled JavaScript.
 - `npm ci` may print an esbuild `allowScripts` warning.
 - Cursor `ask` enforcement depends on host mode/version, so Warden uses deny.
 - Cline cancel on "ask" ends the user's task run.
@@ -100,7 +114,7 @@ Segments 03–04 and 07–08, sandbox engine/ledger wiring, remaining CLI comman
 
 ## Verification
 
-- `npm.cmd test`: 74 passed, 0 failed, 3 skipped because Docker is unavailable (after merging Segment 02 with 05/06).
+- `npm.cmd test`: 89 passed, 0 failed, 3 skipped because Docker is unavailable.
 - `npm.cmd run typecheck`: passed.
 - `git diff --check`: passed.
 - `npm.cmd audit --omit=dev`: 0 vulnerabilities.

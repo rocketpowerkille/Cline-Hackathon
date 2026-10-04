@@ -46,6 +46,9 @@ All protected-repository state lives under `.warden/`:
 ```text
 npm.cmd test
 npm.cmd run typecheck
+npm.cmd run warden -- init [--seed-env]
+npm.cmd run warden -- doctor
+npm.cmd run warden -- uninstall
 ```
 
 On systems where PowerShell execution policy does not shadow npm, normal `npm` commands work.
@@ -136,3 +139,14 @@ new Engine(store, {
 The final shape may stay smaller, but `workspaceRoot` and the sandbox runner must be explicit and injectable.
 
 Status after the Segment 02 merge: `new Engine(store, { workspaceRoot, stages, vault })` exists, with `stages.guardrails` and `stages.canaries`. Add `stages.sandbox` (wrapping `shadowRun`) to the same `EngineStages` interface.
+
+## Install implementation (Segment 08B)
+
+- Cline Windows files: `.clinerules/hooks/{PreToolUse,TaskStart,UserPromptSubmit}.ps1`.
+- Cline Unix files: the same event names without extensions and with executable mode.
+- Cursor config: `.cursor/hooks.json` version 1 with Warden entries in `preToolUse` and `beforeSubmitPrompt` arrays.
+- Cursor wrappers: `.warden/hooks/cursor-<event>.ps1` on Windows and extensionless executable files on Unix.
+- Ownership manifest: `.warden/install.json`; it contains paths/hashes and no secret values.
+- Faster hook entry: `bin/hook.mjs` registers `tsx/esm/api` in-process. Local benchmark: about 175 ms versus about 206 ms for the previous path.
+- Doctor checks Node 22.13+, the launcher, `tsx`, Git ignore state, exact Cline wrappers, exact Cursor wrappers, and merged Cursor entries.
+- Source-checkout limitation: `tsx` remains an approved dev dependency. Before publishing Warden, compile TypeScript and make both bin launchers use built JavaScript.

@@ -26,7 +26,8 @@ Demonstrate and stop a Clinejection-style chain: a poisoned issue influences one
 5. Secret Vault
 6. Sandbox
 7. Cline Responder
-8. Dashboard + Install
+8A. Dashboard
+8B. Install
 
 ## Scope boundary
 

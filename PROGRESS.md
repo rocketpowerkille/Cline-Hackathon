@@ -10,17 +10,18 @@
 | 05 Secret Vault | Complete | 42 tests passed; strict typecheck passed |
 | 06 Sandbox | Complete; engine wiring pending | 51 tests passed; 3 Docker tests skipped |
 | 07 Cline Responder | Not started | — |
-| 08 Dashboard + Install | Not started | — |
+| 08A Dashboard | Not started | — |
+| 08B Install | Complete | 89 passed + 3 Docker skips; wrapper and CLI e2e passed |
 
 ## Current scope
 
-Segments 00, 01, 02, 05, and the standalone Segment 06 sandbox are merged on `main`. The engine runs two stages (guardrails, then vault canaries) and issues `warden run` tickets. Next: connect guardrail `sandbox` verdicts to `shadowRun()`, then Segment 03 (trust tracking).
+Segments 00, 01, 02, 05, 06, and 08B Install are implemented. Install is complete on `segment-08-install`; remaining priorities are sandbox wiring, Segment 03 trust tracking, and 08A Dashboard.
 
 ## Deliberate shortcuts
 
 - Trust is the `untrustedInput` flag (always false from adapters) until Segment 03.
 - `sandbox` verdicts are not yet passed to `shadowRun()`; until then they reach hosts as cancel/deny, like `ask` (approvals arrive in 08).
-- Hook wrapper scripts and installer arrive in Segment 08.
+- Existing non-Warden Cline event files cannot be merged because Cline exposes one workspace filename per event; `warden init` preserves them and `warden doctor` reports the repo as not fully protected.
 
 ## Segment 01 result
 
@@ -84,3 +85,16 @@ Segments 00, 01, 02, 05, and the standalone Segment 06 sandbox are merged on `ma
 - Scripts outside the protected repository and sandbox timeouts fail closed.
 - Docker-only tests skip when Docker is unavailable.
 - Verified with 51 passing tests, 3 Docker skips, strict typechecking, and a zero-vulnerability audit.
+
+## Segment 08B Install result
+
+- Added `warden init [--seed-env]`, `warden uninstall`, and `warden doctor`.
+- Generates PowerShell Cline hooks on Windows and executable extensionless hooks on Linux/macOS.
+- Merges Cursor hook arrays without replacing existing entries and uses project-local wrapper scripts.
+- Adds `.warden/` to `.gitignore` once and tracks ownership in `.warden/install.json`.
+- Repeated init is idempotent and preserves user-owned or modified hooks.
+- Uninstall removes only fixed, manifest-owned, hash-matching files and one owned Cursor entry.
+- Optional `--seed-env` moves `.env` values into the vault before installing hooks.
+- Doctor checks Node, the hook launcher, `tsx`, Git ignore state, Cline hooks, Cursor wrappers, and Cursor config.
+- Dedicated `bin/hook.mjs` startup measured about 175 ms versus about 206 ms for the prior loader path.
+- All installer tests use temporary repositories; init was never run against this repository.
