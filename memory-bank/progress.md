@@ -2,12 +2,12 @@
 
 ## Current status
 
-Segment 00 is complete. Work is paused before Segment 01.
+Segments 00 and 01 are complete. Segment 02 (Guardrails) is next.
 
 ## Milestones
 
 - [x] Segment 00 — Foundation
-- [ ] Segment 01 — Agent Hooks
+- [x] Segment 01 — Agent Hooks
 - [ ] Segment 02 — Guardrails
 - [ ] Segment 03 — Trust Tracking
 - [ ] Segment 04 — Risk Scoring
@@ -20,33 +20,32 @@ Segment 00 is complete. Work is paused before Segment 01.
 
 ## What works
 
-- Strict TypeScript ESM project configuration.
-- Shared `AgentAction`, verdict, decision, and risk contracts.
-- Cross-platform workspace and `.warden` path construction.
-- Initial SQLite sessions, actions, decisions, and approvals schema.
-- Transactional action and decision recording.
-- Secret-like environment assignments are redacted from stored previews.
-- The allow-only engine skeleton records each decision in the shared ledger.
-- `npm.cmd test`: 4 passed, 0 failed.
-- `npm.cmd run typecheck`: passed.
+- Strict TypeScript ESM project, core contracts, portable paths.
+- SQLite ledger (sessions, actions, decisions, approvals) with redacted previews, WAL, busy timeout.
+- Allow-only engine that records every decision.
+- Cline and Cursor hook adapters normalize real host payloads into `AgentAction` and translate verdicts into each host's output schema.
+- `runHook` fails open with valid host allow JSON on any Warden error; stdio entry point verified as a separate process, including UTF-8/UTF-16 BOM input from PowerShell.
+- Cline and Cursor sessions write to one shared `.warden/warden.db` in the protected repo.
+- `npm.cmd test`: 22 passed, 0 failed. `npm.cmd run typecheck`: passed.
 
 ## Remaining work
 
-All runtime security segments remain after the foundation.
+Segments 02-08, CLI integration, offline demo.
 
 ## Mocks and shortcuts
 
-- The Segment 00 engine intentionally returns `allow` for every action. Guardrails begin in Segment 02.
-- No optional runtime integrations are installed yet.
-- The ledger redactor currently covers common assignment forms; vault-aware canary handling belongs to Segment 05.
+- Engine still returns `allow` for everything; adapter tests use a fake engine for non-allow verdicts.
+- Hook scripts/installer are not generated yet (Segment 08); hosts invoke `tsx src/hooks/main.ts` manually for now.
+- No Cline SDK plugin adapter yet; file hooks only.
 
 ## Known issues
 
-- Cline Windows hook behavior must be validated during Segment 01.
-- Cursor `ask` enforcement can depend on Cursor mode/version.
+- Hook startup through tsx costs about 300 ms per call.
+- `npm ci` prints an esbuild `allowScripts` warning (harmless).
 
 ## Decision evolution
 
-- Adopted Node 22.13 as the effective minimum for stable built-in SQLite availability.
-- Chose redacted previews plus content hashes for the action ledger.
-- Use `npm.cmd` for local Windows validation because PowerShell blocks `npm.ps1`.
+- Node 22.13 minimum for stable `node:sqlite`.
+- Redacted previews plus SHA-256 hashes in the ledger.
+- `npm.cmd` for Windows validation.
+- Segment 01: hosts never see `ask`; every non-allow verdict is a hard cancel/deny at the host boundary.

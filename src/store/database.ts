@@ -13,6 +13,8 @@ export class WardenStore {
   constructor(filename: string) {
     if (filename !== ":memory:") mkdirSync(path.dirname(filename), { recursive: true });
     this.database = new DatabaseSync(filename);
+    // Cline and Cursor hooks run as concurrent processes against one ledger.
+    this.database.exec("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL;");
     this.database.exec(schema);
   }
 

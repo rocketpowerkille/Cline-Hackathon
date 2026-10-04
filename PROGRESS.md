@@ -3,7 +3,7 @@
 | Segment | Status | Verification |
 | --- | --- | --- |
 | 00 Foundation | Complete | 4 tests passed; strict typecheck passed |
-| 01 Agent Hooks | Not started | — |
+| 01 Agent Hooks | Complete | 22 tests passed; strict typecheck passed |
 | 02 Guardrails | Not started | — |
 | 03 Trust Tracking | Not started | — |
 | 04 Risk Scoring | Not started | — |
@@ -14,18 +14,18 @@
 
 ## Current scope
 
-Foundation only: project configuration, core contracts, repository paths, SQLite ledger, allow-only engine skeleton, and tests.
+Foundation plus Cline and Cursor hook adapters. The engine still allows everything.
 
 ## Deliberate shortcuts
 
 - No security rule is active yet.
 - No runtime dependency is installed yet.
-- The existing empty `.clinerule` is untouched.
+- Hook wrapper scripts and installer arrive in Segment 08.
 
-## Segment 00 result
+## Segment 01 result
 
-- Added strict TypeScript, ESM, and Node 22.13+ configuration.
-- Added core action and decision contracts.
-- Added path helpers, initial SQLite schema, transactional ledger, and allow-only engine.
-- Added tests for path handling, redacted storage, persistence, and engine logging.
+- Added Cline (PreToolUse, UserPromptSubmit, TaskStart) and Cursor (beforeShellExecution, beforeMCPExecution, beforeReadFile, beforeSubmitPrompt, preToolUse) adapters.
+- Added `runHook` and the stdio entry `src/hooks/main.ts <cline|cursor> [event]`, failing open with valid host JSON.
+- Enabled SQLite WAL and busy timeout for concurrent hook processes.
+- Added host-payload fixtures plus adapter, routing, fail-open, shared-ledger, and spawned-process tests.
 - Verified with `npm.cmd test`, `npm.cmd run typecheck`, and `git diff --check`.
