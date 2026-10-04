@@ -2,7 +2,7 @@
 
 ## Current focus
 
-Segment 03 Trust Tracking from `main` and Segment 08B Install/README are combined on `segment-08-install`. Complete the merge verification, then continue with sandbox evidence persistence or Segment 04. Dashboard remains separate as 08A.
+Segment 04 risk scoring and schema-v5 sandbox evidence persistence are in this working tree, along with separate CLI status/score modules. Do not touch dashboard/responder/demo folders: parallel branches own them.
 
 ## Repository state
 
@@ -12,6 +12,14 @@ Segment 03 Trust Tracking from `main` and Segment 08B Install/README are combine
 - The source-checkout hook launchers require the approved `tsx` development dependency.
 
 ## Recent changes
+
+### Segment 04 and sandbox ledger
+
+- CLEF typed noul scores use Ollama `/v1/systemone` then Cloudflare Workers AI with 350 ms total timeout and offline fallback; remote state is structural only.
+- Noisy-OR risk and weighted cumulative budget use ask 1.2/block 2.3; reads accrue at 0.2 weight but never budget-block.
+- Decision backend, questions, p, budget, and latency are persisted; schema v5 adds `sandbox_runs` redacted summaries linked to actions and decisions.
+- Added `warden status` and `warden score [SESSION_ID]` separate modules; test preload forces offline mode.
+- Contract and limitations are in `riskScoring.md`.
 
 ### Segment 03
 
@@ -38,7 +46,7 @@ Segment 03 Trust Tracking from `main` and Segment 08B Install/README are combine
 - Session and file taint are sticky. Trusted edits do not automatically clear provenance.
 - Raw hook/tool output is hashed and classified, not saved verbatim.
 - A sandbox allow continues the remaining engine pipeline; it is not an unconditional final allow.
-- Sandbox evidence persistence is still separate from sandbox invocation.
+- Sandbox evidence persistence now follows engine invocation and is linked to the decision.
 - Installer removal paths are derived from fixed supported events; manifest paths are never trusted directly.
 - Existing Cline hooks are never overwritten or automatically chained.
 - Cursor commands reference stable project-local wrappers.
@@ -46,13 +54,12 @@ Segment 03 Trust Tracking from `main` and Segment 08B Install/README are combine
 
 ## Next step
 
-After merged verification, add redacted `sandbox_runs` persistence or begin Segment 04 risk scoring. Segment 08A Dashboard remains unimplemented.
+Segment 07 responder and Segment 08A Dashboard are being handled on parallel branches. Remaining risk work: live model smoke tests and calibration, robust handling of concurrent budget updates, and broader secret-safe local-model gating.
 
 ## Remaining work
 
-- Persist sandbox evidence summaries through a new append-only schema migration.
 - Improve observation of dynamically generated shell paths, writes performed inside scripts, and broad file listing/search output.
-- Implement risk scoring, responder, dashboard approvals, remaining CLI commands, and the offline demo.
+- Implement responder, dashboard approvals, and offline demo on their respective branches.
 - Add explicit review/trust-reset semantics rather than auto-clearing taint.
 
 ## Install manual verification / packaging
@@ -65,7 +72,7 @@ After merged verification, add redacted `sandbox_runs` persistence or begin Segm
 
 ## Verification
 
-- `npm.cmd test`: 94 passed, 0 failed, 3 Docker-only tests skipped.
+- `npm.cmd test`: 99 passed, 0 failed, 3 Docker-only tests skipped.
 - `npm.cmd run typecheck`: passed.
 - `git diff --check`: passed.
 - `npm.cmd audit --omit=dev`: 0 vulnerabilities.

@@ -85,7 +85,7 @@ Guardrails request sandbox -> shadowRun -> static evidence
 - Allowed tainted writes capture a pre-write baseline once under `.warden/snapshots/`. Trusted edits preserve existing taint; explicit review and trust reset are future work.
 - Engine calls sandbox only for guardrail sandbox requests when no higher-priority finding exists. An allow proceeds through the remaining decision path, not an unconditional policy bypass.
 
-### Deferred engine integration contract
+### Engine integration contract (implemented)
 
 ```text
 trust result
@@ -97,15 +97,22 @@ trust result
   -> risk/session budget
   -> provenance
   -> approval
-  -> persist one final Decision plus sandbox evidence summary
+  -> persist one final Decision plus redacted sandbox evidence summary
 ```
 
-- `Engine` must receive `workspaceRoot` separately from `AgentAction`; action paths and commands are untrusted inputs, not repository identity.
-- Inject a `SandboxRunner` function/interface into `Engine` so tests do not require Docker and Guardrails remain independent of the sandbox implementation.
+- `Engine` receives `workspaceRoot` separately from `AgentAction`; action paths and commands are untrusted inputs, not repository identity.
+- Injectable `stages.sandbox` and `stages.risk` let tests run without Docker or model network calls.
 - Guardrails select `sandbox`; the sandbox returns only `allow` or `block` evidence. It must not implement trust, risk, or approval policy.
 - A sandbox allow means “safe enough to continue evaluation,” not “execute unconditionally.”
 - A sandbox block reason and labels participate in the same final decision composition as other engine stages.
-- Persist sandbox evidence through the store after an action row exists; do not let the sandbox module own SQLite.
+- Persist sandbox evidence through the store after an action row exists; the sandbox module does not own SQLite.
+- Implemented: schema v5 `sandbox_runs` records a redacted summary linked to `action_id` and `decision_id`, without raw stdout/script content.
+
+## Risk layer (Segment 04)
+
+- `src/policy/risk.ts` provides typed CLEF noul questions, noisy-OR probability, weighted budget increment, and short-timeout Ollama/Cloudflare/offline heuristic scoring; details and sources: `riskScoring.md`.
+- Engine scores only non-post, non-prompt actions without higher-priority findings; reads count 0.2x and never block solely on risk. A generic budget reason is hidden by more specific findings.
+- Store persists `sessions.risk_budget` increments, `decisions.risk_latency_ms`, and the existing question/backend fields. Inference failure falls back to heuristic rather than failing open with an empty risk score.
 
 ## Install layer (Segment 08B)
 

@@ -4,6 +4,7 @@ import { guardrails, type Finding, type GuardrailStage, type PolicyContext } fro
 import { pathKey, type PathKey } from "../policy/targets.js";
 import { externalResult, looksLikeInjection, readKeys, snapshotTaintedWrite } from "./trust.js";
 import { shadowRun, type SandboxResult } from "../sandbox/shadow.js";
+import { ASK_BUDGET, BLOCK_BUDGET, budgetIncrement, RiskScorer } from "../policy/risk.js";
 import type { WardenStore } from "../store/database.js";
 import { isFullyCanaried, scanWardenCanaries } from "../vault/canary.js";
 import type { AgentAction, Decision, Verdict } from "./types.js";
@@ -15,6 +16,7 @@ export interface EngineStages {
   guardrails: GuardrailStage;
   canaries: PolicyStage;
   sandbox: (workspaceRoot: string, action: AgentAction) => SandboxResult;
+  risk: (action: AgentAction, intent: string) => Promise<Decision["risk"]>;
 }
 
 /** The slice of SecretVault the engine needs; issues a single-use ticket for an allowed `warden run`. */
@@ -35,7 +37,9 @@ export const canaryStage: PolicyStage = (action) => {
   return [{ verdict: "block", label: "vault:canary", reason: "Blocked: a Warden secret canary appeared in outbound content." }];
 };
 
-export const defaultStages: EngineStages = { guardrails, canaries: canaryStage, sandbox: (workspaceRoot, action) => shadowRun({ workspaceRoot, action }) };
+const defaultScorer = new RiskScorer();
+export const defaultStages: EngineStages = { guardrails, canaries: canaryStage, sandbox: (workspaceRoot, action) => shadowRun({ workspaceRoot, action }),
+  risk: (action, intent) => defaultScorer.score(action, intent) };
 
 /** Strictest wins. Ask outranks sandbox because only a human can resolve it. */
 const severity: Record<Verdict, number> = { allow: 0, sandbox: 1, ask: 2, block: 3 };
@@ -69,16 +73,37 @@ export class Engine {
     const canaryFindings = action.post ? [] : await this.stages.canaries(evaluated, context);
     const findings = [...guardrailFindings, ...canaryFindings];
     let sandboxLabels: string[] = [];
+    let sandboxResult: SandboxResult | undefined;
+    let sandboxDuration = 0;
     if (!action.post && guardrailFindings.some((finding) => finding.verdict === "sandbox")
       && !findings.some((finding) => finding.verdict === "ask" || finding.verdict === "block")) {
+      const started = performance.now();
       const result = this.stages.sandbox(this.workspaceRoot, evaluated);
+      sandboxDuration = performance.now() - started;
+      sandboxResult = result;
       sandboxLabels = result.evidence.labels;
       // Preserve guardrail labels even after shadow execution clears their sandbox requests.
       findings.splice(0, findings.length, ...findings.filter((finding) => finding.verdict !== "sandbox"));
       sandboxLabels.push(...guardrailFindings.filter((finding) => finding.verdict === "sandbox").map((finding) => finding.label));
       if (result.verdict === "block") findings.push({ verdict: "block", label: "sandbox:block", reason: result.reason });
     }
-    const decision = combine(findings);
+    const previousBudget = this.store.sessionBudget(action.sessionId);
+    let increment = 0;
+    let risk = combine([]).risk;
+    if (!action.post && action.kind !== "prompt" && !findings.some((finding) => finding.verdict === "block" || finding.verdict === "ask")) {
+      const intent = action.userIntent || this.store.sessionIntent(action.sessionId);
+      risk = await this.stages.risk(evaluated, intent);
+      increment = budgetIncrement(risk.actionProbability, action.kind);
+      const total = previousBudget + increment;
+      if (action.kind !== "read" && total >= BLOCK_BUDGET) findings.push({ verdict: "block", label: "risk:budget", reason: `Cumulative session risk ${total.toFixed(2)} exceeded block threshold ${BLOCK_BUDGET}.` });
+      else if (action.kind !== "read" && total >= ASK_BUDGET) findings.push({ verdict: "ask", label: "risk:budget", reason: `Cumulative session risk ${total.toFixed(2)} exceeded approval threshold ${ASK_BUDGET}.` });
+    }
+    risk.sessionBudget = previousBudget + increment;
+    // A specific guardrail/canary/sandbox finding takes precedence over a generic budget explanation.
+    const specific = findings.some((finding) => finding.label !== "risk:budget" && finding.verdict !== "sandbox");
+    const decision = combine(specific ? findings.filter((finding) => finding.label !== "risk:budget") : findings);
+    if (specific && findings.some((finding) => finding.label === "risk:budget")) decision.labels.push("risk:budget");
+    decision.risk = risk;
     decision.labels.push(...sandboxLabels);
     if (effectiveOrigin) {
       decision.labels.push("trust:untrusted");
@@ -94,9 +119,10 @@ export class Engine {
     if (runInvocation) decision.labels.push("vault:run-ticket");
 
     const advanced = decision.verdict === "allow" || (!!action.post && action.success !== false);
-    this.store.record({ ...evaluated, untrustedInput: advanced && evaluated.untrustedInput,
+    const ids = this.store.record({ ...evaluated, untrustedInput: advanced && evaluated.untrustedInput,
       // Tool results are volatile and can contain secrets; retain only their separate hash.
-      content: action.post ? "" : evaluated.content }, decision);
+      content: action.post ? "" : evaluated.content }, decision, increment);
+    if (sandboxResult) this.store.recordSandboxRun(ids, sandboxResult, sandboxDuration);
     // Permission hooks can be denied; never taint a session or snapshot a write that did not happen.
     if (advanced) {
       if (effectiveOrigin) this.store.markUntrusted(action.sessionId, effectiveOrigin.reason, effectiveOrigin.originSession);

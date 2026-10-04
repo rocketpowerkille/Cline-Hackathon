@@ -36,10 +36,11 @@ export function guardrailHarness() {
   /** Registers one test asserting every target gets the expected verdict. */
   const cases = (name: string, kind: ActionKind, expected: Verdict, targets: string[], extra: Partial<AgentAction> = {}) =>
     test(`${name} -> ${expected}`, async () => {
-      for (const target of targets) {
-        const decision = await decide(kind, target, extra);
+      for (const [index, target] of targets.entries()) {
+        const isolated = { sessionId: `${name}-${index}`, ...extra };
+        const decision = await decide(kind, target, isolated);
         if (expected === "sandbox") {
-          const findings = await guardrails(action(kind, target, extra), { workspaceRoot: root, isCanariedEnv: () => false });
+          const findings = await guardrails(action(kind, target, isolated), { workspaceRoot: root, isCanariedEnv: () => false });
           assert.ok(findings.some((finding) => finding.verdict === "sandbox"), `${target} did not request sandbox`);
           continue; // Sandbox may allow or block based on actual evidence, not just the lexical rule.
         }

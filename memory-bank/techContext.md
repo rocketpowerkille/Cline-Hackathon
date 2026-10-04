@@ -75,8 +75,7 @@ Every optional integration requires an offline fallback.
 
 - `src/store/schema.ts` exports `migrations[]`; `migrate(db)` applies `migrations[user_version..]` one by one under `BEGIN IMMEDIATE`.
 - Append new migrations; never edit shipped ones. Use `IF NOT EXISTS` / additive changes so concurrent hooks and older DBs are safe.
-- `sandbox_runs` (below) should be migration v4.
-- Trust tables are migration v4; `sandbox_runs` must be a later append-only migration (v5 or newer).
+- Trust tables are migration v4; redacted `sandbox_runs` and `decisions.risk_latency_ms` are migration v5.
 
 ## Current CLI
 
@@ -84,6 +83,8 @@ Every optional integration requires an offline fallback.
 npm.cmd run warden -- vault add <NAME>
 npm.cmd run warden -- vault seed [.env]
 npm.cmd run warden -- vault list
+npm.cmd run warden -- status
+npm.cmd run warden -- score [SESSION_ID]
 npm.cmd run warden -- run [--only NAME[,NAME...]] -- <command> [args...]
 ```
 
@@ -100,20 +101,22 @@ npm.cmd run warden -- run [--only NAME[,NAME...]] -- <command> [args...]
 - Docker tests skip when the daemon/image is unavailable; static fallback tests always run.
 - Current local state: Docker client is installed, but the Docker Desktop Linux daemon is not running.
 
-### Deferred sandbox persistence
+### Implemented sandbox persistence (schema v5)
 
-Add a shared `sandbox_runs` table during Engine integration:
+The shared `sandbox_runs` table links to action_id and decision_id and records:
 
 ```text
 id INTEGER PRIMARY KEY
 action_id INTEGER NOT NULL REFERENCES actions(id)
+decision_id INTEGER NOT NULL REFERENCES decisions(id)
 backend TEXT NOT NULL
 verdict TEXT NOT NULL
 reason TEXT NOT NULL
 labels_json TEXT NOT NULL
+inspected_files_json TEXT NOT NULL
 changed_files_json TEXT NOT NULL
 secret_files_json TEXT NOT NULL
-canaries_json TEXT NOT NULL
+canaries_count INTEGER NOT NULL
 network_attempts_json TEXT NOT NULL
 control_files_json TEXT NOT NULL
 exit_code INTEGER
@@ -122,24 +125,11 @@ duration_ms INTEGER NOT NULL
 created_at TEXT NOT NULL
 ```
 
-Do not store raw command output, copied source text, environment variables, or secret values. Add a prepared `WardenStore.recordSandboxRun(actionId, result, durationMs)` method rather than writing SQL from `src/sandbox/`.
+Do not store raw command output, copied source text, environment variables, or secret values. `WardenStore.recordSandboxRun(ids, result, durationMs)` owns the prepared SQL and redaction.
 
-### Deferred Engine API change
+### Engine integration
 
-The live repository engine should construct dependencies approximately as:
-
-```text
-new Engine(store, {
-  workspaceRoot,
-  vault,
-  guardrails,
-  sandbox: shadowRun,
-})
-```
-
-The final shape may stay smaller, but `workspaceRoot` and the sandbox runner must be explicit and injectable.
-
-Status after the Segment 02 merge: `new Engine(store, { workspaceRoot, stages, vault })` exists, with `stages.guardrails` and `stages.canaries`. Add `stages.sandbox` (wrapping `shadowRun`) to the same `EngineStages` interface.
+`new Engine(store, { workspaceRoot, stages, vault })` has injectable `stages.guardrails`, `stages.canaries`, `stages.sandbox`, and `stages.risk`. The store writes redacted sandbox summaries after the action/decision row exists. `WARDEN_RISK_OFFLINE=1` forces the risk heuristic; tests preload this before any spawned hooks.
 
 ## Install implementation (Segment 08B)
 

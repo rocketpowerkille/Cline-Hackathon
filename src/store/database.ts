@@ -3,9 +3,16 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { AgentAction, Decision, StoredDecision } from "../core/types.js";
+import type { SandboxResult } from "../sandbox/shadow.js";
+import { scanWardenCanaries } from "../vault/canary.js";
 import { migrate } from "./schema.js";
 
 const PREVIEW_LIMIT = 240;
+const redact = (value: string): string => scanWardenCanaries(value).length || /(?:bearer\s+\S+|(?:token|secret|password|key)\s*[=:]\s*\S+|(?:ghp_|github_pat_|sk-|npm_)[\w-]{12,})/i.test(value)
+  ? "[REDACTED]" : value.replace(/https?:\/\/[^\s/]+(?:\/[^\s]*)?/gi, (url) => {
+    try { return new URL(url).origin; } catch { return "[URL]"; }
+  }).slice(0, 200);
+const safeList = (values: string[]): string => JSON.stringify(values.slice(0, 30).map(redact));
 
 export class WardenStore {
   readonly database: DatabaseSync;
@@ -60,7 +67,27 @@ export class WardenStore {
       .run(sessionId, tool, target, createHash("sha256").update(output).digest("hex"), flagged ? 1 : 0, new Date().toISOString());
   }
 
-  record(action: AgentAction, decision: Decision): StoredDecision {
+  sessionBudget(sessionId: string): number {
+    return Number((this.database.prepare("SELECT risk_budget FROM sessions WHERE session_id = ?").get(sessionId)?.risk_budget ?? 0));
+  }
+
+  sessionIntent(sessionId: string): string {
+    return String(this.database.prepare("SELECT user_intent FROM sessions WHERE session_id = ?").get(sessionId)?.user_intent ?? "");
+  }
+
+  recordSandboxRun(ids: StoredDecision, result: SandboxResult, durationMs: number): void {
+    const evidence = result.evidence;
+    this.database.prepare(`INSERT INTO sandbox_runs (action_id, decision_id, backend, verdict, reason, labels_json,
+      inspected_files_json, changed_files_json, secret_files_json, canaries_count, network_attempts_json,
+      control_files_json, exit_code, timed_out, duration_ms, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(ids.actionId, ids.decisionId, evidence.backend, result.verdict, redact(result.reason), safeList(evidence.labels),
+        safeList(evidence.inspectedFiles), safeList(evidence.changedFiles), safeList(evidence.secretFiles), evidence.canaries.length,
+        safeList(evidence.networkAttempts), safeList(evidence.controlFiles), evidence.exitCode, evidence.timedOut ? 1 : 0,
+        Math.max(0, Math.round(durationMs)), new Date().toISOString());
+  }
+
+  record(action: AgentAction, decision: Decision, budgetIncrement = 0): StoredDecision {
     const now = new Date().toISOString();
     const transaction = this.database.prepare("BEGIN");
     const commit = this.database.prepare("COMMIT");
@@ -70,8 +97,8 @@ export class WardenStore {
     try {
       this.database.prepare(`
         INSERT INTO sessions (
-          session_id, source, agent, user_intent, untrusted, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          session_id, source, agent, user_intent, untrusted, created_at, updated_at, risk_budget
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(session_id) DO UPDATE SET
           source = excluded.source,
           agent = excluded.agent,
@@ -80,6 +107,7 @@ export class WardenStore {
             ELSE excluded.user_intent
           END,
           untrusted = MAX(sessions.untrusted, excluded.untrusted),
+          risk_budget = sessions.risk_budget + ?,
           updated_at = excluded.updated_at
       `).run(
         action.sessionId,
@@ -89,6 +117,8 @@ export class WardenStore {
         action.untrustedInput ? 1 : 0,
         now,
         now,
+        budgetIncrement,
+        budgetIncrement,
       );
 
       const actionResult = this.database.prepare(`
@@ -112,8 +142,8 @@ export class WardenStore {
       const decisionResult = this.database.prepare(`
         INSERT INTO decisions (
           action_id, verdict, reason, labels_json, action_probability,
-          session_budget, risk_backend, risk_questions_json, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          session_budget, risk_backend, risk_questions_json, created_at, risk_latency_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         actionResult.lastInsertRowid,
         decision.verdict,
@@ -124,6 +154,7 @@ export class WardenStore {
         decision.risk.backend,
         JSON.stringify(decision.risk.questions),
         now,
+        decision.risk.latencyMs ?? 0,
       );
 
       commit.run();

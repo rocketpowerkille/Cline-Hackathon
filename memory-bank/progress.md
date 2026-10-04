@@ -2,7 +2,7 @@
 
 ## Current status
 
-Segments 00, 01, 02, 03, 05, 06, and 08B Install are implemented. Segment 08 is split: 08A Dashboard remains. Sandbox invocation is live; sandbox evidence persistence and broader observation remain outstanding.
+Segments 00–06 and 08B Install are implemented. Segment 08A Dashboard remains. Sandbox invocation and redacted evidence persistence are live; broader observation remains outstanding.
 
 ## Milestones
 
@@ -10,9 +10,9 @@ Segments 00, 01, 02, 03, 05, 06, and 08B Install are implemented. Segment 08 is 
 - [x] Segment 01 — Agent Hooks
 - [x] Segment 02 — Guardrails
 - [x] Segment 03 — Trust Tracking (known shell/file visibility limitations)
-- [ ] Segment 04 — Risk Scoring
+- [x] Segment 04 — Risk Scoring (live model integration not exercised)
 - [x] Segment 05 — Secret Vault
-- [x] Segment 06 — Sandbox (evidence persistence pending)
+- [x] Segment 06 — Sandbox (schema-v5 evidence persistence)
 - [ ] Segment 07 — Cline Responder
 - [ ] Segment 08A — Dashboard
 - [x] Segment 08B — Install
@@ -29,18 +29,18 @@ Segments 00, 01, 02, 03, 05, 06, and 08B Install are implemented. Segment 08 is 
 - Tainted writes preserve the original baseline or record a newly created file for responder recovery.
 - Secret vault, canary blocking, single-use run tickets, and selective child-process injection work without storing values in SQLite.
 - Guardrail sandbox findings invoke static/optional Docker shadow execution.
+- Risk answers combine through noisy-OR into a per-session cumulative budget, with Ollama/Cloudflare/heuristic backends and bounded fallback.
+- Sandbox summaries linked to actions and decisions persist in `sandbox_runs`; `warden status` and `warden score` are read-only commands.
 - `warden init`, doctor, and uninstall pass real CLI-process tests in temporary repositories.
 - Generated Cline and Cursor wrappers pass JSON stdio process tests.
 - Root README documents installation and current limitations.
 
 ## Remaining work
 
-- Segment 04 risk scoring.
 - Segment 07 responder.
 - Segment 08A Dashboard and approval flow.
-- Redacted `sandbox_runs` persistence.
 - Broader shell/file observation and explicit reviewed trust reset.
-- Remaining CLI commands and full offline demo.
+- Full offline demo and remaining dashboard/responder CLI integration.
 
 ### Segment 08B remaining verification / packaging
 
@@ -53,12 +53,12 @@ Segments 00, 01, 02, 03, 05, 06, and 08B Install are implemented. Segment 08 is 
 ## Mocks and shortcuts
 
 - `ask` still reaches hosts as cancel/deny pending Dashboard approval.
-- Risk fields remain zero until Segment 04.
+- CLEF model requests are tested with fakes; no live Ollama/Cloudflare evaluation or calibration was done. See `riskScoring.md`.
 - Existing Cline hook files are preserved rather than composed.
 - Automated tests use an in-memory secret store; native keychain needs manual smoke tests.
 - Docker-only tests skip when Docker is unavailable.
 - Network wrappers can be bypassed by absolute-path clients, so static detection and `--network none` remain authoritative.
-- Sandbox evidence summaries are not yet persisted.
+- Risk-budget read-then-write across concurrent hook processes is not strictly serializable; near-threshold races require future transactional handling.
 
 ## Known issues
 
@@ -79,7 +79,7 @@ Segments 00, 01, 02, 03, 05, 06, and 08B Install are implemented. Segment 08 is 
 
 ## Verification
 
-- `npm.cmd test`: 94 passed, 0 failed, 3 Docker-only tests skipped.
+- `npm.cmd test`: 99 passed, 0 failed, 3 Docker-only tests skipped.
 - `npm.cmd run typecheck`: passed.
 - `git diff --check`: passed.
 - `npm.cmd audit --omit=dev`: 0 vulnerabilities.

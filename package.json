@@ -11,7 +11,7 @@
   },
   "scripts": {
     "warden": "tsx src/cli/warden.ts",
-    "test": "tsx --test test/**/*.test.ts",
+    "test": "node --import ./test/offline.mjs --import tsx --test test/**/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

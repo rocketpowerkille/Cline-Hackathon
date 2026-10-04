@@ -115,6 +115,30 @@ export const migrations: readonly string[] = [
     created_at TEXT NOT NULL
   );
   `,
+  // 5: redacted sandbox evidence and risk inference latency
+  `
+  CREATE TABLE IF NOT EXISTS sandbox_runs (
+    id INTEGER PRIMARY KEY,
+    action_id INTEGER NOT NULL REFERENCES actions(id),
+    decision_id INTEGER NOT NULL REFERENCES decisions(id),
+    backend TEXT NOT NULL,
+    verdict TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    labels_json TEXT NOT NULL,
+    inspected_files_json TEXT NOT NULL,
+    changed_files_json TEXT NOT NULL,
+    secret_files_json TEXT NOT NULL,
+    canaries_count INTEGER NOT NULL,
+    network_attempts_json TEXT NOT NULL,
+    control_files_json TEXT NOT NULL,
+    exit_code INTEGER,
+    timed_out INTEGER NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS sandbox_runs_decision ON sandbox_runs(decision_id);
+  ALTER TABLE decisions ADD COLUMN risk_latency_ms INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 export const schemaVersion = migrations.length;

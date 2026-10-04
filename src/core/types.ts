@@ -38,6 +38,7 @@ export interface DecisionRisk {
   sessionBudget: number;
   backend: RiskBackend;
   questions: RiskQuestions;
+  latencyMs?: number;
 }
 
 export interface Decision {

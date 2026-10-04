@@ -5,6 +5,8 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseWardenRunArgv } from "./args.js";
+import { status } from "./status.js";
+import { score } from "./score.js";
 import { wardenStatePath } from "../core/paths.js";
 import { doctorWarden, installWarden, uninstallWarden, type InstallResult } from "../install/init.js";
 import { WardenStore } from "../store/database.js";
@@ -32,6 +34,17 @@ export async function runCli(
   const [command, subcommand, ...rest] = argv;
   const root = process.cwd();
   const packageRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+
+  if (command === "status") {
+    if (subcommand || rest.length) throw new Error("Usage: warden status");
+    io.stdout.write(status(root));
+    return 0;
+  }
+  if (command === "score") {
+    if (rest.length || subcommand?.startsWith("-")) throw new Error("Usage: warden score [SESSION_ID]");
+    io.stdout.write(score(root, subcommand));
+    return 0;
+  }
 
   if (command === "init") {
     const seedEnv = subcommand === "--seed-env";
@@ -104,7 +117,7 @@ export async function runCli(
       });
     }
 
-    throw new Error("Usage: warden <init|uninstall|doctor|vault add|seed|list|run>");
+    throw new Error("Usage: warden <init|uninstall|doctor|status|score|vault add|seed|list|run>");
   } finally {
     context.close();
   }
