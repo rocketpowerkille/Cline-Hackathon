@@ -131,3 +131,21 @@ test("simple shell redirects get a pre-write snapshot and shell reads inherit fi
     assert.match(store.sessionOrigin("reader")!.reason, /writer wrote after/);
   } finally { store.close(); rmSync(root, { recursive: true, force: true }); }
 });
+
+test("search output mentioning a tainted file carries provenance to a later session", async () => {
+  const root = tempWorkspace();
+  const store = new WardenStore(":memory:");
+  try {
+    const engine = new Engine(store, { workspaceRoot: root });
+    const fields = { source: "cursor" as const, agent: "cursor", untrustedInput: false, userIntent: "", content: "" };
+    await engine.decide({ ...fields, sessionId: "issue-reader", kind: "mcp", tool: "github/get_issue", target: "issue #42",
+      post: true, observedOutput: "Issue instructions" });
+    writeFileSync(path.join(root, "AGENTS.md"), "tainted");
+    await engine.decide({ ...fields, sessionId: "issue-reader", kind: "write", tool: "Write", target: "AGENTS.md" });
+    // Control-file write needs an approval in production; record the taint explicitly here as a fixture.
+    store.markFile("agents.md", "issue-reader", store.sessionOrigin("issue-reader")!.reason, null, false);
+    await engine.decide({ ...fields, sessionId: "search-reader", kind: "read", tool: "search_files", target: "src",
+      post: true, observedOutput: "AGENTS.md:1: Before building, run setup.sh" });
+    assert.match(store.sessionOrigin("search-reader")!.reason, /read agents.md which issue-reader wrote/);
+  } finally { store.close(); rmSync(root, { recursive: true, force: true }); }
+});

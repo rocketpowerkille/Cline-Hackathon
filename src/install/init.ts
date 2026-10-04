@@ -14,8 +14,10 @@ import path from "node:path";
 import type { SecretVault } from "../vault/secrets.js";
 
 const MANAGED_MARKER = "WARDEN_MANAGED_HOOK v1";
-const CURSOR_EVENTS = ["preToolUse", "beforeSubmitPrompt"] as const;
-const CLINE_EVENTS = ["PreToolUse", "TaskStart", "UserPromptSubmit"] as const;
+// Generic preToolUse covers shell/MCP permissions. Do not also register specialized BEFORE hooks:
+// the same action would be decided twice and consume twice the risk budget.
+const CURSOR_EVENTS = ["preToolUse", "postToolUse", "afterShellExecution", "afterMCPExecution", "beforeSubmitPrompt"] as const;
+const CLINE_EVENTS = ["PreToolUse", "PostToolUse", "TaskStart", "UserPromptSubmit"] as const;
 
 interface ManagedFile {
   path: string;
@@ -67,7 +69,7 @@ export function installWarden(options: InstallOptions): InstallResult {
   const nodePath = options.nodePath ?? process.execPath;
   const hookLauncher = path.join(packageRoot, "bin", "hook.mjs");
   if (!existsSync(hookLauncher)) throw new Error(`Warden hook launcher not found: ${hookLauncher}`);
-  if (!tsxAvailable(packageRoot)) throw new Error("Warden requires the installed tsx runtime; run npm install before warden init");
+  if (!runtimeAvailable(packageRoot)) throw new Error("Warden requires compiled dist/ or the installed tsx runtime; run npm run build before warden init");
   const cursor = readCursorConfig(root);
   if (!cursor.ok) throw new Error(cursor.error);
 
@@ -191,7 +193,7 @@ export function doctorWarden(options: Omit<InstallOptions, "seedEnv" | "vault">)
     message: `Node ${process.versions.node} (requires 22.13+)`,
   });
   checks.push({ status: existsSync(launcher) ? "ok" : "error", message: `Hook launcher: ${launcher}` });
-  checks.push({ status: tsxAvailable(packageRoot) ? "ok" : "error", message: "tsx runtime loader is available" });
+  checks.push({ status: runtimeAvailable(packageRoot) ? "ok" : "error", message: "compiled or tsx runtime loader is available" });
   checks.push({ status: gitignoreHasWarden(root) ? "ok" : "error", message: ".warden/ is ignored by Git" });
 
   for (const event of CLINE_EVENTS) {
@@ -468,4 +470,10 @@ function tsxAvailable(packageRoot: string): boolean {
   } catch {
     return false;
   }
+}
+
+function runtimeAvailable(packageRoot: string): boolean {
+  return (existsSync(path.join(packageRoot, "dist", "hooks", "main.js"))
+    && existsSync(path.join(packageRoot, "dist", "cli", "warden.js")))
+    || tsxAvailable(packageRoot);
 }

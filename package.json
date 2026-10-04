@@ -6,10 +6,13 @@
   "bin": {
     "warden": "./bin/warden.mjs"
   },
+  "files": ["bin/", "dist/", "README.md"],
   "engines": {
     "node": ">=22.13.0"
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
     "demo": "tsx demo/run-demo.ts",
     "warden": "tsx src/cli/warden.ts",
     "test": "node --import ./test/offline.mjs --import tsx --test test/**/*.test.ts",
@@ -21,7 +24,6 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "@cline/sdk": "^0.0.90",
     "@napi-rs/keyring": "^2.1.0"
   }
 }

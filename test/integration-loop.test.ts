@@ -126,6 +126,24 @@ test("canary-only blocks are open incidents and root respond closes them without
   } finally { process.chdir(original); store.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
+test("production responder refuses to claim an exposed credential was rotated by a mock", async () => {
+  const root = tempWorkspace();
+  const previous = process.cwd();
+  const store = new WardenStore(path.join(root, ".warden", "warden.db"));
+  const output = new PassThrough();
+  const io = { stdin: new PassThrough(), stdout: output, stderr: output, promptSecret: async () => "" };
+  try {
+    await new Engine(store, { workspaceRoot: root }).decide(action("real-key", "read", "README.md"));
+    store.database.prepare("INSERT INTO vault_entries (name,placeholder,source_path,created_at,updated_at) VALUES ('NPM_TOKEN','canary',NULL,'now','now')").run();
+    store.database.prepare("INSERT INTO vault_grants (session_id,name,granted_at) VALUES ('real-key','NPM_TOKEN','now')").run();
+    process.chdir(root);
+    assert.equal(await runCli(["respond", "--session", "real-key", "--deterministic"], io), 2);
+    assert.match(String(output.read()), /OPEN [^\n]+\nCRITICAL NO PROVIDER: NPM_TOKEN/);
+    const state = JSON.parse(readFileSync(path.join(root, ".warden", "incidents", "response_real-key.json"), "utf8")) as { closed: boolean };
+    assert.equal(state.closed, false);
+  } finally { process.chdir(previous); store.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
 test("root warden dashboard starts a local server and removes its marker on shutdown", async () => {
   const root = tempWorkspace();
   const entry = fileURLToPath(new URL("../src/cli/warden.ts", import.meta.url));

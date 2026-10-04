@@ -55,9 +55,11 @@ src/store/schema.ts      migrations[] + migrate() (PRAGMA user_version)
 - Adapters validate host input, normalize it, and translate the final verdict.
 - Policy modules return small results and labels; they do not write host-specific responses.
 - The store owns SQL and transactions.
+- The budget threshold decision is made under a SQLite `BEGIN IMMEDIATE` write lock, so simultaneous hook processes cannot score from the same previous budget.
 - Real secrets are referenced by keychain identifiers and never persisted in SQLite.
 - The responder runbook is deterministic; an SDK agent may invoke it but does not redefine it.
 - Secret storage is abstracted behind `SecretStore`; production uses the OS keychain and tests use memory.
+- Production response providers are empty: unsupported real exposed keys leave the incident open. Fake providers exist only in the offline demo's in-process runner, not in the CLI or dashboard.
 - SQLite stores vault names, canaries, source paths, and session grants, never real secret values.
 - `warden run` integration will call the vault's child-process launcher so secrets never enter the parent process environment.
 - Allowed `warden run` actions create a 30-second single-use ticket bound to session ID, exact child argv, and exact key selection.
@@ -150,3 +152,6 @@ warden init
 - Sandbox temporary directories are removed in `finally`; named containers receive repeated forced cleanup attempts.
 - Scripts outside the protected repository, timeouts, and Docker execution failures fail closed.
 - Installer tests use only OS temporary repositories; automated tests never initialize the Warden development repository.
+- Fresh-install wrapper subprocess tests check Cursor issue output through a later Cline read/exec and Cline PostToolUse observation.
+- When Docker is not available, the static backend blocks untrusted executable commands even when its lexical scan finds no threat; it never certifies arbitrary code safe to run.
+- `reviewRestoredFile` clears a single file's taint only after exact baseline comparison or verified absence of an attacker-created file; it does not change session trust.

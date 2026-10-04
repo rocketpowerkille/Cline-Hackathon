@@ -15,14 +15,15 @@
 
 ## Current scope
 
-Segments 00–08 are integrated across the merged tree. Engine asks now wait for a dashboard decision before returning to the host; root CLI dispatches dashboard/respond; sandbox and canary blocks appear as incidents before response. Demo integration remains with the separate demo owner: Part 2 currently asserts the old `ask` verdict when no dashboard is running, whereas the final verdict is now `block`.
+Segments 00–08 and the three-part offline demo are integrated. The fresh-install result-observation path, concurrent risk thresholding, fail-closed no-Docker execution, and production-only compiled runtime are tested. The demo uses a fake token/mock provider; real key rotation is deliberately not claimed.
 
 ## Deliberate shortcuts
 
 - An ask is recorded and shown while waiting, then finalized on that same decision row: approved allows, denied/expired blocks. The run ticket and tainted-write snapshot are created only after approval. Cline still aborts the entire task on a final block.
 - Model availability and latency are bounded; live CLEF integration still needs an environment with a model installed or Cloudflare credentials. Absent Ollama is cached under `.warden/` for 120 seconds across hook processes.
 - Existing non-Warden Cline event files cannot be merged because Cline exposes one workspace filename per event; init preserves them and doctor reports the collision.
-- Trust visibility for dynamically generated shell paths, writes inside scripts, and broad search/list outputs is incomplete.
+- Trust visibility for dynamically generated shell paths, writes inside scripts, and broad search/list outputs is incomplete; static-only untrusted execution is denied.
+- Default responder has no real credential rotation providers: exposed keys remain OPEN. Mock rotation requires explicit demo flags and is never the dashboard default.
 
 ## Segment 03 result
 
@@ -70,16 +71,16 @@ Segments 00–08 are integrated across the merged tree. Engine asks now wait for
 
 - Without Warden, the obviously fake npm token reaches a localhost attacker.
 - With Warden, real Cursor/Cline payloads propagate taint, hold the control-file write, sandbox `scripts/setup.sh`, block execution, and deliver zero attacker requests.
-- Demo Part 3 responder recovery remains deferred.
+- Demo Part 3 performs mock-backed key rotation/verification, restores the original `AGENTS.md`, and quarantines `scripts/setup.sh`.
 
 ## Combined verification
 
-- Full `npm.cmd test`: 1 failing legacy demo assertion (expects `ask`, receives final `block` without a dashboard); remaining 118 tests passed and 3 optional Docker tests skipped. Non-demo suite: 118 passed, 0 failed, 3 skipped.
+- Full `npm.cmd test`: 125 passed, 0 failed, 3 optional Docker tests skipped (October 4, 2026 verification).
 - `npm.cmd run typecheck`: passed.
 - `git diff --check`: passed.
-- `npm.cmd audit --omit=dev`: **32 vulnerabilities (14 high, 13 moderate, 5 low)** from the `@cline/sdk` dependency tree; do not treat the SDK as safe for production without remediation.
+- `npm.cmd audit --omit=dev`: **0 findings** after removing optional `@cline/sdk` from the default install. Installing it separately requires a new audit and security review.
 
 ## Known limitations
 
-- The separate demo owner must update its `demo/run-demo.ts` assertion from preliminary `ask` to final `block` (or start and approve via the dashboard); this branch did not touch `demo/`.
-- The 32 SDK transitive audit findings are unresolved. Deterministic response does not load the SDK, but the installed dependency still needs a remediated release or an explicit risk decision.
+- Real host versions, local CLEF, OS keychain and Docker remain external verification gates; no native or live-provider success has been claimed.
+- Mock rotation is suitable only for the offline demo. Build verified real providers before allowing an exposed real credential incident to close.

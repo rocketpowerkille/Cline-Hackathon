@@ -20,15 +20,11 @@ Implemented:
 - Persisted redacted sandbox evidence
 - Deterministic incident responder with optional restricted Cline SDK sessions
 - Local dashboard and approval service
-- Offline attack demo Parts 1 and 2
-- Windows/Linux/macOS hook installer
+- Offline attack demo Parts 1, 2, and 3 (mock credentials and provider)
+- Windows/Linux/macOS hook installer with result-observation hooks
 - `warden doctor` and safe uninstall
 
-Still in progress:
-
-- Dashboard approval integration inside the engine and root CLI
-- Root CLI dispatch for standalone responder/dashboard commands
-- Responder recovery in demo Part 3
+Still requiring integration verification: real Cline/Cursor host sessions, live CLEF, native keychain, Docker, and real credential rotation providers. No real credential rotation is claimed by the default responder.
 
 ## Requirements
 
@@ -38,7 +34,7 @@ Still in progress:
 - Cline and/or Cursor
 - Docker is optional
 
-The current hackathon build runs TypeScript through `tsx`, so install all repository dependencies before using the hooks.
+For a source checkout, install dependencies with `npm ci`. A compiled production-only runtime can be built with `npm run build` and installed with `npm ci --omit=dev`; it does not need `tsx`.
 
 ## Install Warden itself
 
@@ -47,7 +43,8 @@ Clone Warden and install its dependencies:
 ```bash
 git clone https://github.com/rocketpowerkille/hackathon.git warden
 cd warden
-npm install
+npm ci
+npm run build
 ```
 
 ### Option 1: create a global development link
@@ -63,7 +60,8 @@ You can then run `warden` from a repository you want to protect.
 On Windows PowerShell, use `npm.cmd` instead of `npm` if execution policy blocks `npm.ps1`:
 
 ```powershell
-npm.cmd install
+npm.cmd ci
+npm.cmd run build
 npm.cmd link
 ```
 
@@ -105,7 +103,7 @@ node /path/to/warden/bin/warden.mjs init
 
 `warden init`:
 
-- Creates Cline hooks for `PreToolUse`, `TaskStart`, and `UserPromptSubmit`
+- Creates Cline hooks for `PreToolUse`, `PostToolUse`, `TaskStart`, and `UserPromptSubmit`
 - Adds Warden entries to Cursor's `.cursor/hooks.json`
 - Preserves existing Cursor hook entries
 - Refuses to overwrite existing Cline hook files
@@ -117,9 +115,13 @@ node /path/to/warden/bin/warden.mjs init
 
 ```text
 .clinerules/hooks/PreToolUse.ps1
+.clinerules/hooks/PostToolUse.ps1
 .clinerules/hooks/TaskStart.ps1
 .clinerules/hooks/UserPromptSubmit.ps1
 .warden/hooks/cursor-preToolUse.ps1
+.warden/hooks/cursor-postToolUse.ps1
+.warden/hooks/cursor-afterShellExecution.ps1
+.warden/hooks/cursor-afterMCPExecution.ps1
 .warden/hooks/cursor-beforeSubmitPrompt.ps1
 ```
 
@@ -190,7 +192,7 @@ Doctor also reminds you to enable Cline hooks manually.
    Add a line to AGENTS.md
    ```
 
-   The current file-hook behavior cancels a non-allowed Cline action. The dashboard approval service exists, but its waiter is not yet connected to `Engine.decide`.
+   Start `warden dashboard` in another terminal first. An ask waits up to 20 seconds for a click; deny, expiry, or a missing dashboard blocks the action. Cline's file-hook cancel stops the task, not just the tool call.
 
 > Cline exposes one workspace hook filename per event. If a Cline hook already exists, Warden preserves it and `warden doctor` reports the collision instead of overwriting it.
 
@@ -240,6 +242,14 @@ warden run --only NPM_TOKEN -- npm publish
 
 `warden run` fails closed when its ticket is missing, expired, reused, ambiguous, or does not match the exact command.
 
+## Dashboard and incident response
+
+Run `warden dashboard` from the protected repository to start a loopback-only dashboard at `127.0.0.1:8765`. Approvals and incident response require the dashboard's per-process token and matching browser origin. Exposed keys with no configured real rotation provider leave an incident **OPEN**; the default responder never treats mock rotation as real.
+
+Use `warden respond --session <id> --deterministic` for offline, fail-closed investigation and file recovery. The optional `--sdk` mode requires installing and auditing `@cline/sdk` separately. The CLI never loads mock rotation providers; the offline demo injects its mocks in-process and **must not** be used for real credentials.
+
+After reviewing responder recovery, `warden trust review-file <PATH>` requires an interactive local terminal and a typed confirmation; it clears file taint only if the content equals the original pre-taint snapshot or the attacker-created file has been removed. Session taint remains sticky.
+
 ## Uninstall repository hooks
 
 From the protected repository:
@@ -265,6 +275,7 @@ Windows PowerShell:
 ```powershell
 npm.cmd test
 npm.cmd run typecheck
+npm.cmd run build
 ```
 
 Linux/macOS:
@@ -272,6 +283,7 @@ Linux/macOS:
 ```bash
 npm test
 npm run typecheck
+npm run build
 ```
 
 Tests require no API keys, cloud services, or Docker. Docker-only sandbox tests skip automatically when Docker or the configured image is unavailable.
@@ -294,8 +306,9 @@ Real secret values are stored in the operating system keychain, not in `.warden/
 ## Important limitations
 
 - This is an in-progress hackathon MVP.
-- The dashboard UI exists, but approval handoff is not yet wired into the engine/root CLI.
-- Demo Parts 1 and 2 are implemented; responder recovery is deferred to Part 3.
+- Static-only sandbox evaluation cannot certify executable code. Without Docker, untrusted execution is blocked even if the static scan looks clean.
+- The demo's key rotation is explicitly mock-backed; the default responder will leave exposed keys open until verified real provider adapters exist.
+- The hook wrappers are tested as subprocesses, but real IDE version/enablement behavior, a live CLEF model, native keychain, and Docker daemon still require environment checks.
 - Cline Windows `.ps1` discovery should be manually verified against the installed Cline version.
-- The source-checkout installer requires `tsx`; a distributable release should compile TypeScript to JavaScript.
+- Compile before a production-only install; `bin/` uses `dist/` without `tsx` when source-loader dependencies are absent. Do not deploy an unbuilt checkout with dev dependencies omitted.
 - Do not use real production credentials for manual testing yet.

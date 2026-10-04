@@ -1,4 +1,4 @@
-# Demo — Parts 1 and 2
+# Demo — Parts 1, 2, and 3
 
 ## Entry points
 
@@ -22,7 +22,7 @@ The hidden issue instruction asks an agent to:
 - A later Cline step reads `AGENTS.md` and executes the script.
 - The fake token must arrive at the localhost attacker or the demo fails.
 
-On Windows the real shell script is executed with Git Bash. On Unix it uses `/bin/sh`.
+On Windows the real shell script uses Git Bash when available; a Node fallback performs the equivalent fake-token POST to the local mock attacker when Bash is absent. Unix uses `/bin/sh` with the same fallback available for tests.
 
 ## Part 2 — with Warden
 
@@ -31,7 +31,7 @@ On Windows the real shell script is executed with Git Bash. On Unix it uses `/bi
 - `.env` is vault-seeded into an in-memory store and rewritten to a canary.
 - Cursor's external issue result produces an injection flag and sticky session taint.
 - The first `AGENTS.md` write produces a control-file hold.
-- Until the existing Dashboard approval waiter is connected to the engine, the demo prints an explicit user-approval line and replays the write through a demo-only guardrail override that removes only the `control-file` finding.
+- The engine's dashboard waiter is integrated. To remain offline and unattended, the demo prints an explicit demo-only approval and replays the write with a local approval callback; the risk stage stays active. Production approval still requires a dashboard click.
 - The later Cline session inherits taint by reading `AGENTS.md`.
 - Executing `scripts/setup.sh` invokes the real sandbox stage and must produce a block plus a `sandbox_runs` ledger row.
 - The localhost attacker must receive zero requests or the demo fails loudly.
@@ -40,6 +40,8 @@ On Windows the real shell script is executed with Git Bash. On Unix it uses `/bi
 
 The terminal prints a colorized one-line trace with statuses including FAIL, FLAG, HOLD, ALLOW, BLOCK, and the final attacker request count.
 
-## Deferred Part 3
+## Part 3 — Offline response
 
-The responder is implemented but intentionally not invoked yet. It will be added as demo Part 3 after this branch is merged.
+- Before the day-two `AGENTS.md` read, Cline obtains a scoped single-use `warden run --only NPM_TOKEN -- npm whoami` ticket; a mock child consumes it and records one real vault grant to the session without calling npm.
+- Deterministic responder sees one exposed fake key, rotates/verifies it through `MockKeyProvider`, restores `AGENTS.md` from the first pre-taint snapshot, quarantines the attacker's script, and writes an inspectable report.
+- Every trace line includes `R=...`; the report path remains on disk after a successful interactive demo. Tests clean up their temporary workspace.

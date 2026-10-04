@@ -34,5 +34,5 @@ No model credentials or network are required: 350 ms total timeout, Ollama first
 
 - 0.12 injection probability per small write yields increment `-ln(0.88) ≈ 0.127833`; 9 steps: 1.1505 (allow), 10: 1.2783 (ask), 18: 2.3010 (block). Denied steps still accrue their *attempted* risk so a slow series escalates from ask to block.
 - 100 ordinary alternating source reads/writes in offline heuristic mode: p = 0, final budget = 0, no ask.
-- The heuristic is deliberately conservative, not a learned calibration. Risk is per session; concurrent hook processes can read an earlier budget before either transaction commits, so strict serializable threshold enforcement across simultaneous calls is not yet guaranteed.
+- The heuristic is deliberately conservative, not a learned calibration. Risk is per session; threshold selection and increment now occur inside a SQLite `BEGIN IMMEDIATE` transaction. A three-process near-threshold test verifies serial ordering.
 The local model gate uses pattern-based detection and cannot prove that arbitrary free-form text contains no secret. The Ollama URL is restricted to HTTP loopback (`localhost`, `127.0.0.1`, `[::1]`) so an override cannot send raw text off-host; Cloudflare receives structural data only. Network and Ollama availability were tested via fakes rather than a live model.

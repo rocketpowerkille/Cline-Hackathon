@@ -101,14 +101,19 @@ export class WardenStore {
     this.database.prepare("UPDATE actions SET untrusted_input=1 WHERE id=?").run(actionId);
   }
 
-  record(action: AgentAction, decision: Decision, budgetIncrement = 0): StoredDecision {
+  record(action: AgentAction, decision: Decision, budgetIncrement = 0, onBudget?: (total: number) => void): StoredDecision {
     const now = new Date().toISOString();
-    const transaction = this.database.prepare("BEGIN");
+    const transaction = this.database.prepare("BEGIN IMMEDIATE");
     const commit = this.database.prepare("COMMIT");
     const rollback = this.database.prepare("ROLLBACK");
 
     transaction.run();
     try {
+      // Reserve the writer lock before looking at the session budget: concurrent hook processes
+      // cannot both make their threshold decision from the same pre-increment value.
+      const currentBudget = Number(this.database.prepare("SELECT risk_budget FROM sessions WHERE session_id=?")
+        .get(action.sessionId)?.risk_budget ?? 0);
+      onBudget?.(currentBudget + budgetIncrement);
       this.database.prepare(`
         INSERT INTO sessions (
           session_id, source, agent, user_intent, untrusted, created_at, updated_at, risk_budget

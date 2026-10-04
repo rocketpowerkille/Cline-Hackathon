@@ -25,17 +25,33 @@ function execAction(command: string): AgentAction {
   };
 }
 
-test("static fallback allows a harmless local script", () => {
+test("static fallback refuses to certify even apparently harmless executable code", () => {
   const fixture = workspace();
   writeFileSync(path.join(fixture.root, "build.sh"), "mkdir -p dist\necho built > dist/result.txt\n");
 
   const result = shadowRun({ workspaceRoot: fixture.root, action: execAction("sh ./build.sh"), docker: "missing-docker" });
 
-  assert.equal(result.verdict, "allow");
+  assert.equal(result.verdict, "block");
+  assert.ok(result.evidence.labels.includes("sandbox:unverified-exec"));
   assert.equal(result.evidence.backend, "static");
   assert.deepEqual(result.evidence.inspectedFiles, ["build.sh"]);
   assert.ok(result.evidence.labels.includes("sandbox:static-fallback"));
   fixture.close();
+});
+
+test("static fallback cannot clear indirect writes, encoded scripts, or dynamically named targets", () => {
+  const fixture = workspace();
+  try {
+    for (const command of [
+      "sh -c 'f=AGENTS.md; printf injected > $f'",
+      "node -e \"eval(Buffer.from('Y29uc29sZS5sb2coMSk=', 'base64').toString())\"",
+      "sh -c 'target=$(printf setup.sh); echo danger > $target'",
+    ]) {
+      const result = shadowRun({ workspaceRoot: fixture.root, action: execAction(command), docker: "missing-docker" });
+      assert.equal(result.verdict, "block", command);
+      assert.equal(result.evidence.backend, "static");
+    }
+  } finally { fixture.close(); }
 });
 
 test("static fallback catches the poisoned setup script", () => {

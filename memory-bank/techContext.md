@@ -14,7 +14,7 @@
 Approved runtime dependencies, added only when needed:
 
 - `@napi-rs/keyring` for the OS keychain
-- `@cline/sdk` for the optional responder agent
+- `@cline/sdk` is **not** installed by default; optional SDK mode requires separate installation and audit.
 
 Approved development dependencies:
 
@@ -87,6 +87,8 @@ npm.cmd run warden -- status
 npm.cmd run warden -- score [SESSION_ID]
 npm.cmd run warden -- dashboard
 npm.cmd run warden -- respond --session <ID> [--deterministic]
+npm.cmd run warden -- trust review-file <PATH> # interactive local terminal only
+npm.cmd run build # dist/ runtime without tsx
 npm.cmd run warden -- run [--only NAME[,NAME...]] -- <command> [args...]
 ```
 
@@ -94,7 +96,7 @@ npm.cmd run warden -- run [--only NAME[,NAME...]] -- <command> [args...]
 - `vault add` reads the value from hidden TTY input; non-interactive input may be piped over stdin.
 - `warden run` requires a live ticket issued by an allowed agent action.
 - Dashboard binds to `127.0.0.1:8765`; manual approvals are resolved within 20 seconds before Cline's 30-second hook deadline. `warden respond --deterministic` needs no SDK credentials.
-- `npm.cmd audit --omit=dev` currently reports **32 transitive vulnerabilities** via `@cline/sdk` (14 high, 13 moderate, 5 low). Deterministic response does not load the SDK; remediate before production.
+- `npm.cmd audit --omit=dev` reports **0** with the default installation. The previously bundled optional SDK introduced 32 transitive findings and must be audited separately before use. Default response leaves real keys OPEN until a verified rotation provider exists.
 
 ## Sandbox implementation
 
@@ -102,7 +104,7 @@ npm.cmd run warden -- run [--only NAME[,NAME...]] -- <command> [args...]
 - Default cached image name: `node:22-alpine`, overridable with `WARDEN_SANDBOX_IMAGE`.
 - Docker readiness and image inspection use an allowlisted client environment.
 - Docker execution uses `--pull=never`, `--network none`, dropped capabilities, no-new-privileges, PID/memory/CPU limits, and a 5-second default timeout.
-- Docker tests skip when the daemon/image is unavailable; static fallback tests always run.
+- Docker tests skip when the daemon/image is unavailable; static fallback tests always run. Static-only untrusted executable code is **blocked** even when no lexical risk was found.
 - Current local state: Docker client is installed, but the Docker Desktop Linux daemon is not running.
 
 ### Implemented sandbox persistence (schema v5)
@@ -137,11 +139,11 @@ Do not store raw command output, copied source text, environment variables, or s
 
 ## Install implementation (Segment 08B)
 
-- Cline Windows files: `.clinerules/hooks/{PreToolUse,TaskStart,UserPromptSubmit}.ps1`.
+- Cline Windows files: `.clinerules/hooks/{PreToolUse,PostToolUse,TaskStart,UserPromptSubmit}.ps1`.
 - Cline Unix files: the same event names without extensions and with executable mode.
-- Cursor config: `.cursor/hooks.json` version 1 with Warden entries in `preToolUse` and `beforeSubmitPrompt` arrays.
+- Cursor config: `.cursor/hooks.json` version 1 with Warden entries in `preToolUse`, `postToolUse`, `afterShellExecution`, `afterMCPExecution`, and `beforeSubmitPrompt` arrays. Specialized before-hooks are deliberately excluded to avoid duplicate risk-budget scoring.
 - Cursor wrappers: `.warden/hooks/cursor-<event>.ps1` on Windows and extensionless executable files on Unix.
 - Ownership manifest: `.warden/install.json`; it contains paths/hashes and no secret values.
 - Faster hook entry: `bin/hook.mjs` registers `tsx/esm/api` in-process. Local benchmark: about 175 ms versus about 206 ms for the previous path.
 - Doctor checks Node 22.13+, the launcher, `tsx`, Git ignore state, exact Cline wrappers, exact Cursor wrappers, and merged Cursor entries.
-- Source-checkout limitation: `tsx` remains an approved dev dependency. Before publishing Warden, compile TypeScript and make both bin launchers use built JavaScript.
+- `npm run build` emits `dist/`; both launchers use compiled code in production-only installs without `tsx`. A temporary `npm ci --omit=dev` install verified the compiled CLI and hook. `npm pack --dry-run --json` lists only the allowlisted `bin/`, `dist/`, README, and package metadata; `prepack` rebuilds before packaging. The package remains private for now.

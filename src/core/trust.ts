@@ -21,6 +21,13 @@ export function externalResult(action: AgentAction): boolean {
 export function readKeys(action: AgentAction, root: string): string[] {
   const targets = action.kind === "read" ? [action.target] : action.kind === "exec"
     ? shellSegments(action.target || action.content).flatMap((segment) => segment.args) : [];
+  if (action.kind === "read" && action.post && action.observedOutput) {
+    // Search/list output may quote tainted files while the tool target is only a directory.
+    // Extract bounded path-shaped tokens, then match only keys already in the taint ledger.
+    for (const match of action.observedOutput.slice(0, 64 * 1024).matchAll(/(?:^|[\s"'`(])(?:\.\/)?([\w.@ -]+(?:[\\/][\w.@ -]+)*\.(?:md|txt|sh|js|ts|json|yml|yaml|py|ps1|cmd|bat|toml|env))(?=[:\s"'`),]|$)/gim)) {
+      targets.push(match[1]!);
+    }
+  }
   return targets.map((target) => pathKey(root, target)).filter((key) => key?.inside && key.key).map((key) => key!.key);
 }
 

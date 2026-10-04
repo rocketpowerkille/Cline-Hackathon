@@ -2,14 +2,14 @@
 
 ## Current focus
 
-Risk, responder and dashboard are now wired into the engine/CLI in this working tree. Parallel demo work owns `demo/`; do not touch it. The old demo assertion expects `ask` when the dashboard is absent, while the new final decision correctly blocks; hand this off to the demo owner.
+Segments 00–08 and the three-part offline demo are integrated. Fresh-init observation hooks, conservative no-Docker execution, serialized risk thresholds, compiled runtime, and fail-closed provider defaults were added in the hardening sweep. External host, model, Docker and real-credential checks remain pending.
 
 ## Repository state
 
 - Minimum Node version is 22.13.
 - PowerShell blocks `npm.ps1`; use `npm.cmd` locally.
 - Run `npm ci` on a fresh checkout because `node_modules` is not committed.
-- The source-checkout hook launchers require the approved `tsx` development dependency.
+- Source-checkout launchers use `tsx` when installed; `npm run build` generates `dist/` for a production-only runtime without `tsx`.
 
 ## Recent changes
 
@@ -35,7 +35,7 @@ Risk, responder and dashboard are now wired into the engine/CLI in this working 
 
 - Added `warden init [--seed-env]`, `warden uninstall`, and `warden doctor`.
 - Added PowerShell Cline wrappers on Windows and executable extensionless wrappers on Unix.
-- Added project-local Cursor wrappers and merged `preToolUse` plus `beforeSubmitPrompt` entries.
+- Added project-local Cursor wrappers and merged `preToolUse`, `postToolUse`, `afterShellExecution`, `afterMCPExecution`, and `beforeSubmitPrompt` entries; Cline also installs `PostToolUse`. Specialized Cursor before-hooks are not installed alongside generic preToolUse, avoiding duplicate budget increments.
 - Added ownership metadata with fixed-event and hash-checked uninstall behavior.
 - Added idempotency, existing-hook preservation, malicious-manifest containment, duplicate Cursor-entry, CLI-process, and generated-wrapper tests.
 - Added `README.md` with installation and usage instructions.
@@ -51,11 +51,11 @@ Risk, responder and dashboard are now wired into the engine/CLI in this working 
 - Added a loopback-only authenticated dashboard, decision/session timeline, risk/sandbox evidence, approval endpoints/waiter, and incident listing.
 - Engine approval waits on the dashboard and finalizes the recorded ask in place. Root `warden dashboard` and `warden respond` dispatch. Open incidents are derived from sandbox/canary blocks before a report exists. Dashboard callback runs deterministic responder and serves reports behind authentication.
 
-### Demo Parts 1 and 2
+### Demo Parts 1, 2 and 3
 
 - Added a fake failing Node repo, poisoned issue #42, localhost attacker, replay fixture, and colored trace.
 - Part 1 proves the fake token leaks without Warden.
-- Part 2 replays real Cursor/Cline payload shapes through `runHook`; Warden carries taint across days, sandboxes the script, blocks it, and sends nothing to the attacker.
+- Part 2 replays real Cursor/Cline payload shapes through `runHook`; Warden carries taint across days, sandboxes the script, blocks it, and sends nothing to the attacker. Part 3 rotates a **mock** key, verifies old-key rejection, restores the original `AGENTS.md`, quarantines the malicious script, and writes a report.
 
 ## Current decisions
 
@@ -70,35 +70,35 @@ Risk, responder and dashboard are now wired into the engine/CLI in this working 
 
 ## Next step
 
-Demo owner should reconcile the legacy `ask` assertion and complete Part 3. Recheck live Cline hook approval timing and test actual model availability in a real environment.
+Test real host hook timing, Docker shadow behavior, a live local CLEF model and OS keychain on target machines. Real npm/GitHub rotation providers are not installed: production incidents with exposed keys remain open rather than falsely claiming a rotation.
 
 ## Remaining work
 
 - Improve observation of dynamically generated shell paths, writes performed inside scripts, and broad file listing/search output.
 - Validate a real browser/Cline hook approval under the 30-second VS Code timeout.
-- Add responder recovery to demo Part 3.
-- Add explicit review/trust-reset semantics rather than auto-clearing taint.
+- Add verified real rotation providers after a credential/API contract review; the CLI cannot invoke mock providers, and the offline demo injects them in-process.
+- File taint can be cleared only with interactive `warden trust review-file` after a matching pre-taint baseline or quarantine; session trust intentionally stays sticky.
 
 ## Install manual verification / packaging
 
 - Manually verify `.ps1` discovery with the installed Cline version on Windows.
 - Enable Cline Hooks manually in Feature Settings.
 - Add Unix wrapper execution to a real Linux CI runner.
-- Compile TypeScript for a distributable release so runtime hooks do not depend on source-checkout `tsx`.
+- Compiled `dist/` and production-only no-`tsx` CLI/hook smoke test pass; package/publish workflow still needs a dedicated release process.
 - Decide whether a future dispatcher should compose occupied Cline event filenames.
 
 ## Verification
 
-- Non-demo tests: 118 passed, 0 failed, 3 Docker skips; full suite has one outdated demo `ask` assertion failure.
+- Full suite: 125 passed, 0 failed, 3 Docker-only skips (October 4, 2026); compiled hook/CLI production-only smoke test passed.
 - `npm.cmd run typecheck`: passed.
 - `git diff --check`: passed.
-- `npm.cmd audit --omit=dev`: 32 SDK transitive findings (14 high, 13 moderate, 5 low).
+- `npm.cmd audit --omit=dev`: 0 findings after removing the optional SDK from default dependencies. SDK installation needs separate audit.
 
 ## Active risks
 
 - Cline `cancel` aborts the whole task; approval must be resolved before replying.
 - Cursor `ask` is not reliably enforced.
 - Guardrail and trust shell matching remain lexical and visibility-limited.
-- Docker tests require a running daemon and cached `node:22-alpine`; the full merged validation ran them successfully.
+- Docker client is present locally but daemon is down; three Docker-only tests skip, and static-only untrusted executable code is denied.
 - `@cline/sdk@0.0.90` currently adds documented transitive audit findings; deterministic responder mode does not load it.
 - The real OS keychain adapter is not exercised by automated tests.

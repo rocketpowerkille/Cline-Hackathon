@@ -6,6 +6,9 @@ import type { AgentAction } from "../src/core/types.js";
 import { ASK_BUDGET, BLOCK_BUDGET, budgetIncrement, noisyOr, RiskScorer, safeState } from "../src/policy/risk.js";
 import { WardenStore } from "../src/store/database.js";
 import { tempWorkspace } from "./helpers.js";
+import { spawn } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const action = (sessionId: string, kind: AgentAction["kind"] = "write", target = "notes.txt"): AgentAction => ({
   source: "replay", sessionId, agent: "test", kind, tool: kind, target, content: "ordinary text", untrustedInput: false, userIntent: "Maintain notes",
@@ -95,5 +98,30 @@ test("absent Ollama is cached across new scorer instances in one workspace", asy
     const second = new RiskScorer({ fetch: fake, env: { WARDEN_RISK_OFFLINE: "0" } });
     assert.equal((await second.score(action("cache"), "Maintain notes", root)).backend, "heuristic");
     assert.equal(attempts, 1, "a new hook process should not retry an unavailable Ollama");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("simultaneous hook processes serialize risk thresholds for one session", async () => {
+  const root = tempWorkspace();
+  const file = path.join(root, "warden.db");
+  new WardenStore(file).close();
+  const worker = fileURLToPath(new URL("./fixtures/risk-worker.ts", import.meta.url));
+  const run = (): Promise<{ verdict: string; budget: number }> => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["--import", import.meta.resolve("tsx"), worker, file, root, "parallel"], {
+      cwd: root, env: { ...process.env, WARDEN_RISK_OFFLINE: "1" }, windowsHide: true });
+    let output = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => { output += chunk; });
+    child.stderr.on("data", (chunk: Buffer) => { stderr += chunk; });
+    child.once("error", reject);
+    child.once("exit", (code) => code === 0 ? resolve(JSON.parse(output) as { verdict: string; budget: number }) : reject(new Error(stderr)));
+  });
+  try {
+    const results = await Promise.all([run(), run(), run()]);
+    assert.deepEqual(results.map((result) => result.verdict).sort(), ["allow", "block", "block"]);
+    const store = new WardenStore(file);
+    assert.ok(store.sessionBudget("parallel") > 2.3);
+    assert.equal((store.database.prepare("SELECT COUNT(*) AS n FROM decisions WHERE verdict='block' AND session_budget >= 1.2").get() as { n: number }).n, 2);
+    store.close();
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

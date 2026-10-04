@@ -92,22 +92,15 @@ export class Engine {
       sandboxLabels.push(...guardrailFindings.filter((finding) => finding.verdict === "sandbox").map((finding) => finding.label));
       if (result.verdict === "block") findings.push({ verdict: "block", label: "sandbox:block", reason: result.reason });
     }
-    const previousBudget = this.store.sessionBudget(action.sessionId);
     let increment = 0;
     let risk = combine([]).risk;
-    if (!action.post && action.kind !== "prompt" && !findings.some((finding) => finding.verdict === "block" || finding.verdict === "ask")) {
+    const riskEligible = !action.post && action.kind !== "prompt" && !findings.some((finding) => finding.verdict === "block" || finding.verdict === "ask");
+    if (riskEligible) {
       const intent = action.userIntent || this.store.sessionIntent(action.sessionId);
       risk = await this.stages.risk(evaluated, intent);
       increment = budgetIncrement(risk.actionProbability, action.kind);
-      const total = previousBudget + increment;
-      if (action.kind !== "read" && total >= BLOCK_BUDGET) findings.push({ verdict: "block", label: "risk:budget", reason: `Cumulative session risk ${total.toFixed(2)} exceeded block threshold ${BLOCK_BUDGET}.` });
-      else if (action.kind !== "read" && total >= ASK_BUDGET) findings.push({ verdict: "ask", label: "risk:budget", reason: `Cumulative session risk ${total.toFixed(2)} exceeded approval threshold ${ASK_BUDGET}.` });
     }
-    risk.sessionBudget = previousBudget + increment;
-    // A specific guardrail/canary/sandbox finding takes precedence over a generic budget explanation.
-    const specific = findings.some((finding) => finding.label !== "risk:budget" && finding.verdict !== "sandbox");
-    const decision = combine(specific ? findings.filter((finding) => finding.label !== "risk:budget") : findings);
-    if (specific && findings.some((finding) => finding.label === "risk:budget")) decision.labels.push("risk:budget");
+    const decision = combine(findings);
     decision.risk = risk;
     decision.labels.push(...sandboxLabels);
     if (effectiveOrigin) {
@@ -117,9 +110,24 @@ export class Engine {
     if (detected) decision.labels.push("trust:injection-attempt");
 
     // First persist ask so the existing approvals FK can reference it; finalize that row after the click.
-    const ids = this.store.record({ ...evaluated, untrustedInput: (decision.verdict === "allow" || (!!action.post && action.success !== false)) && evaluated.untrustedInput,
+    const storedAction = { ...evaluated, untrustedInput: (decision.verdict === "allow" || (!!action.post && action.success !== false)) && evaluated.untrustedInput,
       // Tool results are volatile and can contain secrets; retain only their separate hash.
-      content: action.post ? "" : evaluated.content }, decision, increment);
+      content: action.post ? "" : evaluated.content };
+    const ids = this.store.record(storedAction, decision, increment, (total) => {
+        risk.sessionBudget = total;
+        if (!riskEligible || action.kind === "read" || findings.some((finding) => finding.verdict === "ask" || finding.verdict === "block")) return;
+        if (total >= BLOCK_BUDGET) {
+          decision.verdict = "block";
+          decision.reason = `Cumulative session risk ${total.toFixed(2)} exceeded block threshold ${BLOCK_BUDGET}.`;
+        } else if (total >= ASK_BUDGET) {
+          decision.verdict = "ask";
+          decision.reason = `Cumulative session risk ${total.toFixed(2)} exceeded approval threshold ${ASK_BUDGET}.`;
+        } else return;
+        decision.labels.push("risk:budget");
+        if (effectiveOrigin) decision.reason += ` Taint: ${effectiveOrigin.reason}.`;
+        // The permission hook has not run the action yet: a blocked attempt did not consume input.
+        storedAction.untrustedInput = false;
+      });
     if (sandboxResult) this.store.recordSandboxRun(ids, sandboxResult, sandboxDuration);
     if (!action.post && decision.verdict === "ask") {
       let approval: ApprovalResult;

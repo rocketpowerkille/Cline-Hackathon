@@ -403,7 +403,7 @@ test("real Cline SDK adapter receives exactly the requested tools and no built-i
   assert.deepEqual(Object.keys(configs[0]!.toolPolicies).sort(), request.tools.map((tool) => tool.name).sort());
 });
 
-test("standalone deterministic responder CLI closes the incident without API calls", async () => {
+test("standalone deterministic responder CLI leaves an exposed key open without a real provider", async () => {
   const fixture = await cursorToClineChain();
   const packageRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
   const cli = path.resolve(fileURLToPath(new URL("../src/cli/respond.ts", import.meta.url)));
@@ -416,9 +416,10 @@ test("standalone deterministic responder CLI closes the incident without API cal
       timeout: 30_000,
       env: { ...process.env, WARDEN_RESPONDER_API_KEY: "", ANTHROPIC_API_KEY: "" },
     });
-    assert.equal(run.status, 0, run.stderr);
-    assert.match(run.stdout, /^CLOSED \.warden\/incidents\/incident_/m);
-    assert.match(run.stdout, /OK NPM_TOKEN rotated and the old credential is rejected/);
+    assert.equal(run.status, 2, run.stderr);
+    assert.match(run.stdout, /^OPEN \.warden\/incidents\/incident_/m);
+    assert.match(run.stdout, /NO PROVIDER: NPM_TOKEN/);
+    assert.doesNotMatch(run.stdout, /OK NPM_TOKEN rotated/);
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });
   }

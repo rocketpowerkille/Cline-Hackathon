@@ -3,7 +3,6 @@ import { incidentSession } from "../dashboard/data.js";
 import { DatabaseSync } from "node:sqlite";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { mockProviders } from "../responder/providers.js";
 import { respondDeterministically } from "../responder/runbook.js";
 
 /** Standalone command for the CLI dispatcher to call after parallel branches merge. */
@@ -25,7 +24,7 @@ export async function dashboard(root: string, output: Pick<NodeJS.WritableStream
     const db = new DatabaseSync(path.join(root, ".warden", "warden.db"));
     try {
       await respondDeterministically({ workspaceRoot: root, database: db, sessionId: session,
-        trigger: "dashboard response to blocked session", providers: mockProviders() });
+        trigger: "dashboard response to blocked session", providers: [] });
     } finally { db.close(); }
   } });
   output.write(`Warden dashboard: ${server.url}\n`);

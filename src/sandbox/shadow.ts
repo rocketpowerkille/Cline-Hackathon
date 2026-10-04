@@ -77,7 +77,12 @@ export function shadowRun(request: SandboxRequest): SandboxResult {
   const evidence = useDocker
     ? runDockerShadow(workspaceRoot, request.action, staticEvidence, { docker, image, timeoutMs })
     : { ...staticEvidence, backend: "static" as const, labels: unique([...staticEvidence.labels, "sandbox:static-fallback"]) };
-  const result = decide(evidence);
+  // Lexical inspection cannot prove arbitrary executable code is safe. A missing Docker daemon
+  // must never convert an untrusted execution into permission to run it in the real workspace.
+  const result = !useDocker && request.action.kind === "exec" && decide(evidence).verdict === "allow"
+    ? { verdict: "block" as const, reason: "Blocked: executable code could not be verified without an isolation backend.",
+      evidence: { ...evidence, labels: unique([...evidence.labels, "sandbox:unverified-exec"]) } }
+    : decide(evidence);
   request.record?.(result);
   return result;
 }

@@ -2,7 +2,7 @@
 
 ## Current status
 
-Segments 00–08 are integrated in the merged tree except for the parallel demo update. Engine approval, root CLI dashboard/respond, incident discovery/response, sandbox report evidence, and cross-hook Ollama miss caching are wired. Demo Part 2 still asserts a preliminary ask instead of the final block when no dashboard is running; demo owner must reconcile it.
+Segments 00–08 and all three offline demo parts are integrated. Fresh-install Cline/Cursor result hooks now propagate taint across sessions; static-only execution denies when Docker cannot validate it; concurrent risk budget threshold checks are serialized. Production responder does not claim mock rotation as real.
 
 ## Milestones
 
@@ -17,7 +17,7 @@ Segments 00–08 are integrated in the merged tree except for the parallel demo 
 - [x] Segment 08A — Dashboard (engine/root CLI handoff integrated)
 - [x] Segment 08B — Install
 - [x] Remaining CLI integration
-- [ ] Offline demo (Parts 1–2 complete; Part 3 pending)
+- [x] Offline demo (Parts 1–3, fake key and mock provider)
 
 ## What works
 
@@ -36,21 +36,20 @@ Segments 00–08 are integrated in the merged tree except for the parallel demo 
 - Root README documents installation and current limitations.
 - Deterministic responder and restricted two-session SDK flow are implemented and tested.
 - Local dashboard, approval waiter, security controls, and UI are implemented and tested.
-- Demo Parts 1–2 prove localhost exfiltration without Warden and zero attacker requests with Warden.
+- Demo Parts 1–3 prove localhost exfiltration without Warden, zero attacker requests with Warden, and mock-backed rotation, restoration, and quarantine.
 
 ## Remaining work
 
-- Demo owner: update old no-dashboard `ask` expectation to final `block`; do not bypass approval in the production engine.
-- Add responder recovery to demo Part 3.
-- Broader shell/file observation and explicit reviewed trust reset.
-- Full offline demo and remaining dashboard/responder CLI integration.
+- Verify native host integrations, live model, and Docker backend on target machines; tests do not substitute for running these external services.
+- Implement and verify actual npm/GitHub provider rotation or keep incidents open (the current default).
+- Extend trust visibility for dynamic script writes and search/list results; reviewed file cleanup is implemented but session trust remains sticky.
 
 ### Segment 08B remaining verification / packaging
 
 - [ ] Manually verify `.ps1` discovery with the actual installed Cline version on Windows.
 - [ ] Manually enable Cline Hooks in Feature Settings.
 - [ ] Run generated Unix wrappers in Linux CI.
-- [ ] Compile TypeScript for a distributable package without runtime dependence on dev `tsx`.
+- [x] Compile TypeScript into `dist/` and exercise a production-only CLI/hook install without dev `tsx`.
 - [ ] Decide whether a future dispatcher should compose occupied Cline event filenames.
 
 ## Mocks and shortcuts
@@ -59,16 +58,16 @@ Segments 00–08 are integrated in the merged tree except for the parallel demo 
 - CLEF model requests are tested with fakes; no live Ollama/Cloudflare evaluation or calibration was done. See `riskScoring.md`.
 - Existing Cline hook files are preserved rather than composed.
 - Automated tests use an in-memory secret store; native keychain needs manual smoke tests.
-- Docker tests require Docker/image availability; the latest merged suite ran all Docker cases.
+- Docker tests require a running Docker daemon and cached image; the current local suite skips three cases. Static-only untrusted executable code is denied, not cleared.
 - Network wrappers can be bypassed by absolute-path clients, so static detection and `--network none` remain authoritative.
-- Risk-budget read-then-write across concurrent hook processes is not strictly serializable; near-threshold races require future transactional handling.
+- Risk-budget decisions and increments are made while holding the SQLite immediate write lock; a three-process threshold test passes.
 
 ## Known issues
 
 - Dedicated `bin/hook.mjs` startup measured about 175 ms locally; production packaging needs compiled JavaScript.
 - Cursor `ask` enforcement depends on host mode/version.
 - Cline cancel on ask ends the task run.
-- Dynamic/encoded commands and writes performed inside scripts remain observation gaps.
+- Dynamic/encoded commands and writes performed inside scripts remain observation gaps; static-only execution blocks rather than inferring safety.
 
 ## Decision evolution
 
@@ -82,7 +81,7 @@ Segments 00–08 are integrated in the merged tree except for the parallel demo 
 
 ## Verification
 
-- Full `npm.cmd test`: 118 passed, 1 failing demo assertion, 3 optional Docker skips; non-demo suite: 118 passed, 0 failed, 3 skipped.
+- Full `npm.cmd test`: 125 passed, 0 failed, 3 optional Docker skips (October 4, 2026 verification).
 - `npm.cmd run typecheck`: passed.
 - `git diff --check`: passed.
-- `npm.cmd audit --omit=dev`: **32 findings (14 high, 13 moderate, 5 low)** in the `@cline/sdk` transitive dependency graph. Deterministic responder mode does not load the SDK; production remediation remains required.
+- `npm.cmd audit --omit=dev`: **0 findings** after removing optional `@cline/sdk` from default dependencies. The opt-in SDK must be audited separately before installation or production use.

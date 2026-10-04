@@ -10,6 +10,7 @@ import { score } from "./score.js";
 import { dashboard } from "./dashboard.js";
 import { runRespondCli } from "./respond.js";
 import { wardenStatePath } from "../core/paths.js";
+import { reviewRestoredFile } from "../core/review.js";
 import { doctorWarden, installWarden, uninstallWarden, type InstallResult } from "../install/init.js";
 import { WardenStore } from "../store/database.js";
 import { KeyringSecretStore, keyringService, SecretVault } from "../vault/secrets.js";
@@ -58,6 +59,22 @@ export async function runCli(
     return 0;
   }
   if (command === "respond") return runRespondCli([subcommand, ...rest].filter((value): value is string => value !== undefined), io);
+  if (command === "trust" && subcommand === "review-file") {
+    if (rest.length !== 1) throw new Error("Usage: warden trust review-file <PATH> (interactive terminal required)");
+    if (!process.stdin.isTTY || !process.stdout.isTTY || io !== defaultIo) throw new Error("Trust review requires an interactive local terminal.");
+    const store = new WardenStore(wardenStatePath(root, "warden.db"));
+    try {
+      const file = store.fileOrigin(rest[0]!.replaceAll("\\", "/").replace(/^\.\//, "").toLowerCase());
+      if (!file) throw new Error("No recorded file taint; review path and try again.");
+      const prompt = createInterface({ input: process.stdin, output: process.stdout });
+      let confirmation: string;
+      try { confirmation = await prompt.question(`Verify restored content or quarantine, then type REVIEW ${rest[0]} to clear file taint: `); }
+      finally { prompt.close(); }
+      if (confirmation !== `REVIEW ${rest[0]}`) throw new Error("Review not confirmed; taint retained.");
+      io.stdout.write(`Reviewed ${reviewRestoredFile(store, root, rest[0]!)}. Session taint remains unchanged.\n`);
+      return 0;
+    } finally { store.close(); }
+  }
 
   if (command === "init") {
     const seedEnv = subcommand === "--seed-env";
@@ -130,7 +147,7 @@ export async function runCli(
       });
     }
 
-    throw new Error("Usage: warden <init|uninstall|doctor|status|score|dashboard|respond|vault add|seed|list|run>");
+    throw new Error("Usage: warden <init|uninstall|doctor|status|score|dashboard|respond|trust review-file|vault add|seed|list|run>");
   } finally {
     context.close();
   }
