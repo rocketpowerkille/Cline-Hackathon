@@ -123,6 +123,9 @@ test("canary-only blocks are open incidents and root respond closes them without
     const closed = readDashboard(root).incidents.find((entry) => entry.sessionId === "canary-only");
     assert.equal(closed?.status, "Closed");
     assert.ok(closed?.report);
+    const report = readFileSync(path.join(root, ".warden", "incidents", closed!.report!), "utf8");
+    assert.match(report, /No real credential grants were recorded; no key rotation was required/);
+    assert.doesNotMatch(report, /All recorded exposed keys were rotated/);
   } finally { process.chdir(original); store.close(); rmSync(root, { recursive: true, force: true }); }
 });
 

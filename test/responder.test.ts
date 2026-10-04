@@ -171,6 +171,8 @@ test("deterministic responder rotates once, verifies death, restores and quarant
     assert.match(report, /Cursor|cursor/);
     assert.match(report, /Cline|cline/);
     assert.match(report, /NPM_TOKEN rotated and the old credential is rejected/);
+    assert.match(report, /Deterministic Warden investigation/);
+    assert.match(report, /No investigator or responder Cline SDK sessions were launched/);
     assert.doesNotMatch(report, /npm_fake|ghp_fake/);
     const state = readFileSync(path.join(fixture.root, ".warden", "incidents", `response_${fixture.affectedSession}.json`), "utf8");
     assert.doesNotMatch(state, /npm_fake|ghp_fake/);
@@ -358,6 +360,7 @@ test("two fake Cline sessions receive only bounded investigator/responder tools"
     });
     assert.equal(result.closed, true);
     assert.equal(runner.requests.length, 2);
+    assert.match(readFileSync(path.join(fixture.root, result.reportPath), "utf8"), /Agent-assisted investigation/);
     assert.deepEqual(runner.requests.map((request) => request.role), ["investigator", "responder"]);
     assert.deepEqual(runner.requests[0]!.tools.map((tool) => tool.name), ["read_incident_chain", "submit_investigation"]);
     assert.deepEqual(runner.requests[1]!.tools.map((tool) => tool.name), [

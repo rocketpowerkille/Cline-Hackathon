@@ -1,5 +1,9 @@
 # Project Progress
 
+## Recording readiness (2026-10-04)
+
+152 tests passed, 0 failed/skipped with Docker 28.3.2; typecheck/build and paced offline demo pass. Fresh-install test accepts static/Docker but still requires block. Presenter flags, real dashboard approval/report retention, stable refresh, aligned session-labelled trace, and truthful report wording are implemented. Use `npm.cmd run demo -- --step --dashboard --delay 500` for recording. Automated HTTP approval/report tests pass; manual terminal/browser recording remains a presenter step. No security decision logic changed.
+
 ## Cloudflare usability correction (2026-10-04)
 
 Validation: full suite ran 149 tests (146 passed, 3 failed, none skipped). New Cloudflare regressions all pass; typecheck/build and offline demo pass, including Docker-backed exfiltration blocking. The three unrelated failures are a fresh-install test hardcoding `static` despite Docker being available, and two dashboard tests unable to bind occupied port 8765. The existing dashboard process was not stopped. No new live Cloudflare inference was run.

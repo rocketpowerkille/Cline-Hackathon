@@ -2,6 +2,12 @@
 
 ## Entry points
 
+### Recording mode (2026-10-04)
+
+Run `npm.cmd run demo -- --step --dashboard --delay 500` in an interactive terminal. `--step` pauses before each part; default line delay is 400 ms, overridden by `--delay` (0–5000 ms). Open the printed ephemeral-port dashboard URL in Part 2, press Enter at the readiness prompt, and click Allow on AGENTS.md within the unchanged 20-second window. Denial/expiry fails rather than bypassing approval. Live mode uses normal engine policy, not the simulated factory; additional budget approvals need real clicks too.
+
+The dashboard stays live after Part 3 for the Closed incident and authenticated View report. Enter/Ctrl+C stops it, retaining report/temp repo. Demo dashboard is read/approval-only: deterministic mock-backed recovery runs in Part 3. Tests inject a readiness callback/pause and resolve authenticated requests without a browser. Unattended runs label simulation REPLAY/DEMO. Risk is R[cursor]/R[cline]; unprotected rows have no risk. 152 tests pass with Docker; typecheck/build and paced offline demo pass.
+
 - `npm run demo`
 - `demo/run-demo.ts`
 - Replay fixture: `demo/replay-actions.json`

@@ -1,5 +1,18 @@
 # Warden
 
+## Recording the demo
+
+```powershell
+# From the Warden checkout. Docker should be running with node:22-alpine cached.
+npm.cmd run demo -- --step --dashboard --delay 500
+```
+
+`--step` waits for Enter before each part (and defaults to 400 ms between trace lines). `--delay 0` disables pacing; valid delays are 0–5000 ms. With `--dashboard`, Part 2 prints a dedicated loopback dashboard URL for the protected temporary repository. Open it, press Enter at the readiness prompt, then click **Allow** for `AGENTS.md` within the unchanged **20-second** approval window. A denial or expiry aborts the demo rather than bypassing approval. Further risk-budget approvals, if any, also require real dashboard clicks.
+
+After Part 3, the dashboard stays live so you can show the **Closed** incident and click **View report**. Press Enter in the terminal or Ctrl+C to stop the dashboard; the temporary repository/report remains inspectable. The demo dashboard uses an available port, not the ordinary CLI's fixed port 8765. It is read/approval-only; Part 3 runs deterministic recovery. All demo credentials and rotation providers are fake/mock-backed, and no Cline SDK responder sessions run.
+
+Without `--dashboard`, playback remains unattended and labels its simulated approval explicitly. Risk labels `R[cursor]` and `R[cline]` are separate session budgets, not a single decreasing score. To force offline scoring for recording, set `$env:WARDEN_RISK_OFFLINE='1'` before running; otherwise configured Cloudflare remains in use.
+
 Warden is local detection and response for AI coding agents such as Cline and Cursor. It observes agent tool calls, applies deterministic security rules, detects secret canaries, and records decisions in a repository-local SQLite ledger.
 
 Warden is designed for attacks that look harmless one step at a time—for example, a poisoned issue causing one agent to write persistent instructions that a later agent follows to leak a credential.

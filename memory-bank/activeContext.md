@@ -2,6 +2,14 @@
 
 ## Current focus
 
+### Recording polish (2026-10-04)
+
+- Demo CLI supports `--step`, `--dashboard`, and `--delay 0..5000`. Step mode pauses before each part and defaults to 400 ms per line. Dashboard mode starts a dedicated ephemeral-port dashboard on the protected temp repo, pauses for browser readiness, uses the real approval endpoint/deadline, and stays live after recovery until Enter/Ctrl+C.
+- Live mode never uses the simulated approval factory. Unattended playback labels it REPLAY/DEMO. FLAG wording, separate R[cursor]/R[cline] labels, and ten-character status alignment are polished; fake credentials/mock recovery remain disclosed.
+- Dashboard compares stable snapshots excluding remainingMs; unchanged polls preserve buttons while countdowns continue. Report viewer opens synchronously from the click and displays authenticated text via textContent.
+- Reports distinguish deterministic and agent-assisted execution and no exposure versus verified rotation. Closure/security decisions remain unchanged.
+- Validation: 152 tests passed, 0 failures/skips with Docker 28.3.2; typecheck/build/diff checks and paced offline demo pass. Real HTTP approval/report integration is tested, not a manual browser click-through.
+
 ### Cloudflare latency and baseline fix (2026-10-04)
 
 - User reports real Cloudflare latency of 400–800 ms and benign combined p around 0.2. Configured Cloudflare hook default is now 1000 ms; local default remains 350 ms. Valid explicit overrides win, and the package `.env` now loads `WARDEN_CLEF_TIMEOUT_MS`.

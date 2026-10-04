@@ -1,5 +1,9 @@
 # Responder (Segment 07)
 
+## Report accuracy (2026-10-04)
+
+Optional incident metadata responseMode distinguishes deterministic/agent-assisted execution. Deterministic reports state local Warden analysis/remediation and no Cline SDK sessions; agent-assisted reports identify the configured runner and deterministic completion checks without pretending fake test runners are live SDK sessions. Closure text distinguishes no grants/no rotation required from verified exposed-key rotation, and no linked files from completed recovery. Only reporting metadata/wording changed; canClose, key verification, file repair, and security policy are unchanged.
+
 ## Scope and isolation
 
 Implementation is isolated to:

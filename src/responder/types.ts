@@ -100,6 +100,7 @@ export interface FileOutcome {
 }
 
 export interface IncidentState {
+  responseMode?: "deterministic" | "agent-assisted";
   version: 1;
   incidentId: string;
   sessionId: string;

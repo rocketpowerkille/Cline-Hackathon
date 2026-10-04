@@ -36,6 +36,7 @@ export async function respondWithAgents(options: AgentResponseOptions): Promise<
   });
 
   const state = loadOrCreateState(options.workspaceRoot, investigation);
+  state.responseMode = "agent-assisted";
   const responderTools = createResponderTools(options.workspaceRoot, investigation, state, options.providers);
   const responder = await options.runner.run({
     role: "responder",
@@ -51,6 +52,7 @@ export async function respondWithAgents(options: AgentResponseOptions): Promise<
     sessionId: options.sessionId,
     trigger: options.trigger,
     providers: options.providers,
+    responseMode: "agent-assisted",
     investigatorNarrative: investigator.text,
     responderNarrative: responder.text,
   });

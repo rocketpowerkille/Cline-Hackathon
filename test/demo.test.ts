@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { runDemo } from "../demo/run-demo.js";
+import { parseDemoArgs, runDemo } from "../demo/run-demo.js";
+import { readDashboard } from "../src/dashboard/data.js";
 
 test("demo proves the leak, blocks it, and rotates/restores/quarantines offline", async () => {
   const result = await runDemo({ color: false, print: () => {}, forceNodeFallback: true });
@@ -27,7 +28,10 @@ test("demo proves the leak, blocks it, and rotates/restores/quarantines offline"
     assert.match(result.recovery.report, /scripts\/setup\.sh.*quarantined/i);
     assert.ok(result.trace.some((line) => line.startsWith("ROTATE") && line.includes("old key rejected")));
     assert.ok(result.trace.some((line) => line.startsWith("QUARANTINE")));
-    assert.ok(result.trace.every((line) => /R=\d+\.\d\d/.test(line)), "every trace line must show a risk budget");
+    assert.ok(result.trace.some((line) => /R\[cursor\]=\d+\.\d\d/.test(line)));
+    assert.ok(result.trace.some((line) => /R\[cline\]=\d+\.\d\d/.test(line)));
+    assert.ok(!result.trace.some((line) => /hidden instruction; none|demo-only approval/.test(line)));
+    assert.ok(result.trace.filter((line) => line.includes("RESPONDER")).every((line) => line.indexOf("RESPONDER") === 11));
     assert.ok(result.trace.every((line) => line.length < 125), "projector trace must stay short");
     assert.ok(result.trace.some((line) => line.includes("AGENTS.md")));
     assert.ok(result.trace.some((line) => line.includes("GitHub issue #42")));
@@ -36,4 +40,49 @@ test("demo proves the leak, blocks it, and rotates/restores/quarantines offline"
   } finally {
     rmSync(result.protectedRoot, { recursive: true, force: true });
   }
+});
+
+test("demo presenter flags validate pacing and reject unknown options", () => {
+  assert.deepEqual(parseDemoArgs(["--step", "--dashboard"]), { step: true, dashboard: true, lineDelayMs: 400 });
+  assert.deepEqual(parseDemoArgs(["--delay", "0", "--step"]), { step: true, lineDelayMs: 0 });
+  for (const args of [["--delay"], ["--delay", "-1"], ["--delay", "5001"], ["--other"]]) assert.throws(() => parseDemoArgs(args));
+});
+
+test("dashboard demo uses real approval endpoints and keeps recovered report available", async () => {
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let polling = false;
+  const choices: string[] = [];
+  const pauses: string[] = [];
+  const result = await runDemo({ color: false, print: () => {}, dashboard: true, step: true, lineDelayMs: 1,
+    forceNodeFallback: true, pause: async (message) => { pauses.push(message); },
+    onDashboardReady(server, root) {
+      const { token } = JSON.parse(readFileSync(path.join(root, ".warden", "dashboard.json"), "utf8")) as { token: string };
+      timer = setInterval(() => {
+        if (polling) return;
+        polling = true;
+        void (async () => {
+          for (const approval of readDashboard(root).approvals) {
+            const response = await fetch(new URL(`/api/approvals/${String(approval.id)}`, server.url), { method: "POST",
+              headers: { origin: server.url.slice(0, -1), "content-type": "application/json", "x-warden-token": token },
+              body: JSON.stringify({ choice: "approved" }) });
+            assert.equal(response.status, 200);
+            choices.push(String(approval.target));
+          }
+        })().finally(() => { polling = false; });
+      }, 25);
+    },
+  }).finally(() => { if (timer) clearInterval(timer); });
+  try {
+    assert.ok(choices.includes("AGENTS.md"));
+    assert.equal(pauses.length, 4);
+    assert.ok(result.trace.some((line) => line.startsWith("APPROVE") && line.includes("live dashboard")));
+    assert.ok(!result.trace.some((line) => line.startsWith("REPLAY")));
+    assert.deepEqual(result.protectedReceipts, []);
+    const { token } = JSON.parse(readFileSync(path.join(result.protectedRoot, ".warden", "dashboard.json"), "utf8")) as { token: string };
+    const incident = readDashboard(result.protectedRoot).incidents.find((item) => item.sessionId === "cline-day-2");
+    assert.equal(incident?.status, "Closed");
+    const report = await fetch(new URL(`/api/reports/${incident!.report}`, result.dashboard!.url), { headers: { "x-warden-token": token } });
+    assert.equal(report.status, 200);
+    assert.match(await report.text(), /No investigator or responder Cline SDK sessions were launched/);
+  } finally { await result.dashboard?.close(); rmSync(result.protectedRoot, { recursive: true, force: true }); }
 });

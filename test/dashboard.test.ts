@@ -5,6 +5,8 @@ import { randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { createContext, runInContext } from "node:vm";
+import { dashboardPage } from "../src/dashboard/page.js";
 import { waitForApproval } from "../src/dashboard/approval.js";
 import { readDashboard } from "../src/dashboard/data.js";
 import { startDashboard } from "../src/dashboard/server.js";
@@ -25,6 +27,29 @@ function seed(root: string): { store: WardenStore; ask: number } {
 async function access(server: Awaited<ReturnType<typeof startDashboard>>, endpoint: string, options: RequestInit = {}): Promise<Response> {
   return fetch(new URL(endpoint, server.url), options);
 }
+
+test("dashboard refresh preserves buttons when only the approval countdown changes", async () => {
+  const script = /<script nonce="nonce">([\s\S]*?)<\/script>/.exec(dashboardPage("token", "nonce"))![1]!
+    .replace("refresh();setInterval(refresh,750);setInterval(tick,200);", "");
+  let renders = 0;
+  let remainingMs = 1000;
+  let target = "AGENTS.md";
+  const context = createContext({
+    fetch: async () => ({ ok: true, json: async () => ({ decisions: [], sessions: [], incidents: [],
+      approvals: [{ id: "approval", target, expiresAt: "2026-10-04T00:00:00Z", remainingMs }] }) }),
+    document: { getElementById: () => ({ textContent: "" }) },
+    countRender: () => { renders++; },
+  });
+  runInContext(script + "\nrender=countRender;", context);
+  await runInContext("refresh()", context);
+  assert.equal(renders, 1);
+  remainingMs = 250;
+  await runInContext("refresh()", context);
+  assert.equal(renders, 1, "countdown must not replace button nodes");
+  target = "CLAUDE.md";
+  await runInContext("refresh()", context);
+  assert.equal(renders, 2, "actual data changes must render");
+});
 
 test("live dashboard shows persisted decisions, taint chain, risk, and pending approvals", async () => {
   const root = tempWorkspace();

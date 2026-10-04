@@ -4,6 +4,10 @@ Implemented in `src/dashboard/{approval,data,page,server}.ts`, `src/cli/dashboar
 
 ## Starting / merging
 
+### Recording polish (2026-10-04)
+
+Refresh compares JSON excluding remainingMs; independent countdown ticks no longer replace buttons on unchanged polls. Overlapping refreshes are suppressed. A VM test executes the page script and verifies countdown-only payloads do not render but real changes do. View report opens synchronously on click, detaches opener, fetches with token, and uses textContent (not HTML) with error feedback. Demo `--dashboard` uses an available port and remains live after recovery. Authenticated demo approval/report integration tests pass; approval deadline/security checks are unchanged.
+
 - `startDashboard(workspaceRoot, { port?: number, onRespond?: (incidentName) => Promise<void> | void })` listens **only on `127.0.0.1`**; the default API chooses a free port. Returns `{ port, url, close() }`. The root `warden dashboard` command starts it on port **8765**, before opening any vault/keychain context. Its `onRespond` callback invokes deterministic recovery for a verified blocked session.
 - A random per-process token and bound port are written to `.warden/dashboard.json` (mode 0600 where supported). `close()` removes only its own matching marker. If a stale marker remains, verify no dashboard is running and remove it before restarting. The marker is ignored from Git with the rest of `.warden/`.
 - The engine now calls `await waitForApproval(workspaceRoot, decisionId)` after persisting a preliminary *ask* decision (the approvals table has an existing decision foreign key). The engine finalizes the same decision row to `allow` only on approval, or `block` on denial, expiry, or unavailable dashboard. A missing dashboard immediately denies with a start-dashboard message. Timeout is capped at 20 seconds so the Cline VS Code hook's 30-second deadline is not consumed entirely. Run tickets and tainted-write snapshots only follow a final allow; the session risk increment is not duplicated.

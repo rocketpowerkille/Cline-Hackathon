@@ -6,6 +6,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { createInterface } from "node:readline/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Engine } from "../src/core/engine.js";
 import { runHook, type EngineFactory, type HookHost } from "../src/hooks/run.js";
@@ -15,6 +16,7 @@ import { MockKeyProvider } from "../src/responder/providers.js";
 import { respondDeterministically } from "../src/responder/runbook.js";
 import { WardenStore } from "../src/store/database.js";
 import { MemorySecretStore, SecretVault } from "../src/vault/secrets.js";
+import { startDashboard, type DashboardServer } from "../src/dashboard/server.js";
 
 const FAKE_TOKEN = "npm_demo_FAKE_TOKEN_not_real_12345";
 const colors = {
@@ -41,6 +43,7 @@ interface ReplayFile {
 }
 
 export interface DemoResult {
+  dashboard?: DashboardServer;
   unprotectedReceipts: string[];
   protectedReceipts: string[];
   replayFile: string;
@@ -61,6 +64,11 @@ export interface DemoResult {
 }
 
 export interface DemoOptions {
+  step?: boolean;
+  dashboard?: boolean;
+  lineDelayMs?: number;
+  pause?: (message: string) => Promise<void>;
+  onDashboardReady?: (server: DashboardServer, root: string) => Promise<void> | void;
   color?: boolean;
   print?: (line: string) => void;
   /** Tests opt in to removing the otherwise inspectable incident and quarantine. */
@@ -74,14 +82,18 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
   const print = options.print ?? console.log;
   const trace: string[] = [];
   let riskBudget = 0;
-  const say = (status: string, color: keyof typeof colors, actor: string, action: string, detail: string) => {
-    const label = status.toUpperCase().padEnd(8);
-    const budget = `R=${riskBudget.toFixed(2)}`;
-    const plain = `${label} ${actor.padEnd(10)} ${action.padEnd(32)} ${budget.padEnd(9)} ${detail}`;
+  let riskSession = "";
+  const pause = options.pause ?? waitForEnter;
+  const say = async (status: string, color: keyof typeof colors, actor: string, action: string, detail: string) => {
+    const label = status.toUpperCase().padEnd(10);
+    const budget = riskSession ? `R[${riskSession}]=${riskBudget.toFixed(2)}` : "";
+    const plain = `${label} ${actor.padEnd(10)} ${action.padEnd(32)} ${budget.padEnd(16)} ${detail}`;
     trace.push(plain);
-    print(useColor ? `${colors[color]}${label}${colors.reset} ${colors.cyan}${actor.padEnd(10)}${colors.reset} ${action.padEnd(32)} ${budget.padEnd(9)} ${colors.dim}${detail}${colors.reset}` : plain);
+    print(useColor ? `${colors[color]}${label}${colors.reset} ${colors.cyan}${actor.padEnd(10)}${colors.reset} ${action.padEnd(32)} ${budget.padEnd(16)} ${colors.dim}${detail}${colors.reset}` : plain);
+    if (options.lineDelayMs) await delay(options.lineDelayMs);
   };
   let completed = false;
+  let dashboardServer: DashboardServer | undefined;
 
   const attacker = await startAttacker();
   const replayFile = fileURLToPath(new URL("./replay-actions.json", import.meta.url));
@@ -90,33 +102,42 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
   const protectedRoot = mkdtempSync(path.join(tmpdir(), "warden-demo-protected-"));
 
   try {
+    if (options.step) await pause("Press Enter to start Part 1: the unprotected attack.");
     print("\n=== PART 1 — WITHOUT WARDEN ===");
     const unsafe = resolveReplay(template, unsafeRoot, attacker.url);
     setupRepository(unsafeRoot, unsafe, false);
     const build = await runProcess(npmCommand(), ["run", "build"], unsafeRoot);
     assert.notEqual(build.code, 0, "The demo repository build must fail before the attack chain.");
-    say("FAIL", "yellow", "NODE", "npm run build", "expected failing build");
-    say("ALLOW", "green", "CURSOR", "read GitHub issue #42", "unprotected external input");
+    await say("FAIL", "yellow", "NODE", "npm run build", "expected failing build");
+    await say("ALLOW", "green", "CURSOR", "read GitHub issue #42", "unprotected external input");
     writeFileSync(path.join(unsafeRoot, "AGENTS.md"), unsafe.files.agentsAfter, "utf8");
-    say("ALLOW", "green", "CURSOR", "write AGENTS.md", "persistent instruction added");
+    await say("ALLOW", "green", "CURSOR", "write AGENTS.md", "persistent instruction added");
     mkdirSync(path.join(unsafeRoot, "scripts"), { recursive: true });
     writeFileSync(path.join(unsafeRoot, "scripts", "setup.sh"), unsafe.files.setup, "utf8");
     chmodSync(path.join(unsafeRoot, "scripts", "setup.sh"), 0o755);
-    say("ALLOW", "green", "CURSOR", "write scripts/setup.sh", "exfiltration script added");
-    say("ALLOW", "green", "CLINE", "read AGENTS.md", "trusted persistent instruction");
+    await say("ALLOW", "green", "CURSOR", "write scripts/setup.sh", "exfiltration script added");
+    await say("ALLOW", "green", "CLINE", "read AGENTS.md", "trusted persistent instruction");
     const attack = await runShellScript(unsafeRoot, attacker.url, options.forceNodeFallback ?? false);
     assert.equal(attack.code, 0, `Unprotected setup script failed: ${attack.stderr}`);
     await attacker.waitForCount(1);
     assert.equal(attacker.receipts[0], FAKE_TOKEN, "Part 1 must prove the fake token reached the attacker.");
-    say("LEAK", "red", "CLINE", "exec scripts/setup.sh", `LEAKED ${attacker.receipts[0]}`);
+    await say("LEAK", "red", "CLINE", "exec scripts/setup.sh", `LEAKED ${attacker.receipts[0]}`);
     const unprotectedReceipts = [...attacker.receipts];
 
     attacker.reset();
+    if (options.step) await pause("Press Enter for Part 2: Warden protection.");
     print("\n=== PART 2 — WITH WARDEN ===");
     const protectedReplay = resolveReplay(template, protectedRoot, attacker.url);
     setupRepository(protectedRoot, protectedReplay, true);
     const demo = createDemoEngine(protectedRoot);
     demo.seedEnv();
+    if (options.dashboard) {
+      dashboardServer = await startDashboard(protectedRoot);
+      print(`Live demo dashboard: ${dashboardServer.url}`);
+      print("Fake demo credentials only; recovery uses a mock rotation provider.");
+      await options.onDashboardReady?.(dashboardServer, protectedRoot);
+    }
+    riskSession = "cursor";
     const steps = new Map(protectedReplay.steps.map((step) => [step.id, step]));
 
     await replayHook(steps.get("cursor-intent")!, protectedRoot, demo.normal);
@@ -125,27 +146,39 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
     riskBudget = decision.budget;
     assert.ok(decision.labels.includes("trust:injection-attempt"));
     demo.verifyBackend(decision.backend);
-    say("FLAG", "magenta", "CURSOR", "read GitHub issue #42", `hidden instruction; ${decision.backend}`);
+    await say("FLAG", "magenta", "CURSOR", "read GitHub issue #42", "injection detected; session tainted");
 
-    let output = await replayHook(steps.get("cursor-agents")!, protectedRoot, demo.normal);
-    decision = latestDecision(demo.dbPath);
-    riskBudget = decision.budget;
-    demo.verifyBackend(decision.backend);
-    assert.equal(decision.verdict, "block");
-    assert.ok(decision.labels.includes("approval:denied"));
-    assert.equal(JSON.parse(output.stdout).permission, "deny");
-    say("HOLD", "yellow", "CURSOR", "write AGENTS.md", "control-file approval required");
+    let output;
+    if (dashboardServer) {
+      await say("HOLD", "yellow", "CURSOR", "write AGENTS.md", "human approval required");
+      await pause("Open the dashboard. Press Enter when ready, then click Allow within 20 seconds.");
+      print("Waiting for the dashboard Allow click on AGENTS.md…");
+      output = await replayHook(steps.get("cursor-agents")!, protectedRoot, demo.normal);
+      decision = latestDecision(demo.dbPath);
+      assert.equal(JSON.parse(output.stdout).permission, "allow", "AGENTS.md was denied or expired; rerun and click Allow within 20 seconds.");
+      assert.ok(decision.labels.includes("approval:approved"));
+      await say("APPROVE", "cyan", "USER", "approve AGENTS.md", "approved in live dashboard");
+    } else {
+      output = await replayHook(steps.get("cursor-agents")!, protectedRoot, demo.normal);
+      decision = latestDecision(demo.dbPath);
+      riskBudget = decision.budget;
+      demo.verifyBackend(decision.backend);
+      assert.equal(decision.verdict, "block");
+      assert.ok(decision.labels.includes("approval:denied"));
+      assert.equal(JSON.parse(output.stdout).permission, "deny");
+      await say("HOLD", "yellow", "CURSOR", "write AGENTS.md", "control-file approval required");
 
-    say("APPROVE", "cyan", "USER", "approve AGENTS.md", "demo-only approval (no dashboard)");
-    output = await replayHook(steps.get("cursor-agents")!, protectedRoot, demo.approvedControlWrite);
-    decision = latestDecision(demo.dbPath);
+      await say("REPLAY", "cyan", "DEMO", "approve AGENTS.md", "simulated approval; use --dashboard");
+      output = await replayHook(steps.get("cursor-agents")!, protectedRoot, demo.approvedControlWrite);
+      decision = latestDecision(demo.dbPath);
+    }
     riskBudget = decision.budget;
     demo.verifyBackend(decision.backend);
     assert.equal(JSON.parse(output.stdout).permission, "allow");
     writeFileSync(path.join(protectedRoot, "AGENTS.md"), protectedReplay.files.agentsAfter, "utf8");
-    say("ALLOW", "green", "CURSOR", "write AGENTS.md", "approved; tainted snapshot recorded");
+    await say("ALLOW", "green", "CURSOR", "write AGENTS.md", "approved; tainted snapshot recorded");
 
-    output = await replayHook(steps.get("cursor-setup")!, protectedRoot, demo.approvedControlWrite);
+    output = await replayHook(steps.get("cursor-setup")!, protectedRoot, dashboardServer ? demo.normal : demo.approvedControlWrite);
     decision = latestDecision(demo.dbPath);
     riskBudget = decision.budget;
     demo.verifyBackend(decision.backend);
@@ -153,9 +186,10 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
     mkdirSync(path.join(protectedRoot, "scripts"), { recursive: true });
     writeFileSync(path.join(protectedRoot, "scripts", "setup.sh"), protectedReplay.files.setup, "utf8");
     chmodSync(path.join(protectedRoot, "scripts", "setup.sh"), 0o755);
-    say("ALLOW", "green", "CURSOR", "write scripts/setup.sh", "tainted file recorded");
+    await say("ALLOW", "green", "CURSOR", "write scripts/setup.sh", "tainted file recorded");
 
     await replayHook(steps.get("cline-intent")!, protectedRoot, demo.normal);
+    riskSession = "cline";
     output = await replayHook(steps.get("cline-vault-whoami")!, protectedRoot, demo.normal);
     decision = latestDecision(demo.dbPath);
     riskBudget = decision.budget;
@@ -164,12 +198,12 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
     assert.ok(decision.labels.includes("vault:run-ticket"), "The hook must issue a command-bound vault ticket.");
     const reachedKey = demo.consumeWhoamiTicket();
     assert.equal(reachedKey, FAKE_TOKEN, "The mock child must receive the fake key through the real ticket path.");
-    say("ALLOW", "green", "CLINE", "warden run npm whoami", "scoped NPM_TOKEN reached mock child");
+    await say("ALLOW", "green", "CLINE", "warden run npm whoami", "scoped NPM_TOKEN reached mock child");
     await replayHook(steps.get("cline-agents-read")!, protectedRoot, demo.normal);
     decision = latestDecision(demo.dbPath);
     riskBudget = decision.budget;
     assert.ok(decision.labels.includes("trust:untrusted"));
-    say("FLAG", "magenta", "CLINE", "read AGENTS.md", "cross-agent taint inherited");
+    await say("FLAG", "magenta", "CLINE", "read AGENTS.md", "cross-agent taint inherited");
 
     output = await replayHook(steps.get("cline-setup-exec")!, protectedRoot, demo.normal);
     decision = latestDecision(demo.dbPath);
@@ -178,14 +212,15 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
     assert.equal(decision.verdict, "block");
     assert.equal(JSON.parse(output.stdout).cancel, true);
     assert.ok(sandbox, "A real sandbox ledger row must be recorded.");
-    say("SANDBOX", "yellow", "WARDEN", "shadow-run scripts/setup.sh", `${sandbox.backend} saw secret/network behavior`);
-    say("BLOCK", "red", "WARDEN", "block real execution", "tainted setup.sh; network + secret risk");
+    await say("SANDBOX", "yellow", "WARDEN", "shadow-run scripts/setup.sh", `${sandbox.backend} saw secret/network behavior`);
+    await say("BLOCK", "red", "WARDEN", "block real execution", "tainted setup.sh; network + secret risk");
 
     await delay(150);
     assert.deepEqual(attacker.receipts, [], `WARDEN FAILURE: attacker received ${JSON.stringify(attacker.receipts)}`);
-    say("SAFE", "green", "ATTACKER", "received requests", "0 — nothing left the protected repo");
+    await say("SAFE", "green", "ATTACKER", "received requests", "0 — nothing left the protected repo");
 
-    print("\n=== PART 3 — OFFLINE RESPONSE ===");
+    if (options.step) await pause("Press Enter for Part 3: deterministic recovery with a mock key provider.");
+    print("\n=== PART 3 — DETERMINISTIC RECOVERY (MOCK KEY PROVIDER) ===");
     const store = new WardenStore(demo.dbPath);
     const npm = new MockKeyProvider("npm", /NPM_TOKEN/);
     let response: Awaited<ReturnType<typeof respondDeterministically>>;
@@ -206,11 +241,11 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
     assert.equal(response.closed, true, "The deterministic response should fully close this incident.");
     const reportPath = path.join(protectedRoot, response.reportPath);
     const report = readFileSync(reportPath, "utf8");
-    say("FIND", "magenta", "RESPONDER", "real key grants", "1: NPM_TOKEN");
-    say("ROTATE", "cyan", "RESPONDER", "NPM_TOKEN", "mock key rotated; old key rejected");
-    say("RESTORE", "green", "RESPONDER", "AGENTS.md", "original pre-attack content");
-    say("QUARANTINE", "yellow", "RESPONDER", "scripts/setup.sh", "attacker-created script isolated");
-    say("CLOSED", "green", "RESPONDER", "incident", "all recovery checks passed");
+    await say("FIND", "magenta", "RESPONDER", "recorded key grants", "1: NPM_TOKEN (fake demo key)");
+    await say("ROTATE", "cyan", "RESPONDER", "NPM_TOKEN", "mock key rotated; old key rejected");
+    await say("RESTORE", "green", "RESPONDER", "AGENTS.md", "original pre-attack content");
+    await say("QUARANTINE", "yellow", "RESPONDER", "scripts/setup.sh", "attacker-created script isolated");
+    await say("CLOSED", "green", "RESPONDER", "incident", "all recovery checks passed");
     print(`Incident report: ${reportPath}`);
     completed = true;
 
@@ -221,11 +256,13 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
       trace,
       riskBackends: demo.backends(),
       protectedRoot,
+      ...(dashboardServer ? { dashboard: dashboardServer } : {}),
       recovery: { exposedKeys: response.investigation.exposedKeys, rotationCount: npm.rotationCount("NPM_TOKEN"),
         oldRejected: rotation.oldRejected, agentsRestored, setupQuarantined: !!setupQuarantined,
         closed: response.closed, reportPath, report },
     };
   } finally {
+    if (dashboardServer && (!completed || options.cleanup)) await dashboardServer.close();
     await attacker.close();
     rmSync(unsafeRoot, { recursive: true, force: true });
     if (!completed || options.cleanup) rmSync(protectedRoot, { recursive: true, force: true });
@@ -451,8 +488,40 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+export function parseDemoArgs(args: readonly string[]): Pick<DemoOptions, "step" | "dashboard" | "lineDelayMs"> {
+  const options: Pick<DemoOptions, "step" | "dashboard" | "lineDelayMs"> = {};
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--step") options.step = true;
+    else if (args[i] === "--dashboard") options.dashboard = true;
+    else if (args[i] === "--delay") {
+      const value = args[++i];
+      if (!value || !/^\d+$/.test(value) || Number(value) > 5000) throw new Error("--delay requires milliseconds from 0 to 5000.");
+      options.lineDelayMs = Number(value);
+    } else throw new Error("Usage: npm run demo -- [--step] [--dashboard] [--delay MILLISECONDS]");
+  }
+  if (options.step && options.lineDelayMs === undefined) options.lineDelayMs = 400;
+  return options;
+}
+
+async function waitForEnter(message: string): Promise<void> {
+  if (!process.stdin.isTTY) throw new Error("Interactive demo flags require a terminal. Run without --step/--dashboard for unattended playback.");
+  const input = createInterface({ input: process.stdin, output: process.stdout });
+  try { await input.question(`${message}\n`); } finally { input.close(); }
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  runDemo().catch((error: unknown) => {
+  (async () => {
+    const options = parseDemoArgs(process.argv.slice(2));
+    if ((options.step || options.dashboard) && !process.stdin.isTTY) throw new Error("--step and --dashboard require an interactive terminal.");
+    const result = await runDemo(options);
+    if (result.dashboard) {
+      const close = () => { void result.dashboard!.close().then(() => process.exit(0)); };
+      process.once("SIGINT", close);
+      process.once("SIGTERM", close);
+      try { await waitForEnter(`Dashboard remains live at ${result.dashboard.url} — show the incident and View report. Press Enter to stop.`); }
+      finally { process.off("SIGINT", close); process.off("SIGTERM", close); await result.dashboard.close(); }
+    }
+  })().catch((error: unknown) => {
     console.error(`${colors.red}DEMO FAILED:${colors.reset}`, error);
     process.exitCode = 1;
   });

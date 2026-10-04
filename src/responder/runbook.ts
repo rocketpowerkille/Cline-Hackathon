@@ -22,6 +22,7 @@ import type {
 } from "./types.js";
 
 export interface ResponseOptions {
+  responseMode?: "deterministic" | "agent-assisted";
   workspaceRoot: string;
   database: DatabaseSync;
   sessionId: string;
@@ -39,6 +40,7 @@ export async function respondDeterministically(options: ResponseOptions): Promis
     options.trigger,
   );
   const state = loadOrCreateState(options.workspaceRoot, investigation);
+  state.responseMode = options.responseMode ?? "deterministic";
   const rotations = await rotateExposedKeys(investigation, state, options.providers, options.workspaceRoot);
   const files = repairTaintedFiles(investigation, state, options.workspaceRoot);
   state.closed = canClose(rotations, files);
@@ -277,15 +279,20 @@ export function writeIncidentReport(
     "",
     ...reviewItems(state),
     "",
-    "## Cline session roles",
+    "## Response execution",
     "",
-    "- Investigator session: read-only ledger analysis and exposure attribution.",
-    "- Responder session: invoked only bounded deterministic remediation tools.",
+    ...(state.responseMode === "agent-assisted" ? [
+      "- Agent-assisted investigation: the configured agent runner performed read-only ledger analysis.",
+      "- Agent-assisted response: the configured agent runner used bounded remediation tools, followed by deterministic completion checks.",
+    ] : [
+      "- Deterministic Warden investigation and remediation ran locally.",
+      "- No investigator or responder Cline SDK sessions were launched for this response.",
+    ]),
     "",
     "## Closure check",
     "",
     state.closed
-      ? "All exposed supported keys were rotated, old credentials were rejected, and every tainted file was restored, quarantined, or already absent."
+      ? `${investigation.exposedKeys.length ? "All recorded exposed keys were rotated and their old credentials were rejected." : "No real credential grants were recorded; no key rotation was required."} ${investigation.taintedFiles.length ? "Every linked tainted file was restored, quarantined, or already resolved." : "No linked tainted files required recovery."}`
       : "Incident remains open. Resolve every CRITICAL rotation failure, unsupported exposed key, and file marked for review.",
     "",
   ].join("\n");

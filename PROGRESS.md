@@ -78,6 +78,8 @@ Segments 00–08 and the three-part offline demo are integrated. The fresh-insta
 
 ## Combined verification
 
+- Recording polish (October 4, 2026): **152 passed, 0 failed, 0 skipped** with Docker on. Typecheck/build/diff checks and paced offline demo pass. Live-demo approval/report endpoint tests and stable UI refresh tests pass; use `npm.cmd run demo -- --step --dashboard --delay 500` for recording. Security policy and approval deadline are unchanged.
+
 - Cloudflare correction verification (October 4, 2026): 149 tests ran, 146 passed and 3 unrelated environment-dependent tests failed (static-backend assertion with working Docker; two tests binding occupied dashboard port 8765). All new Cloudflare regressions, Docker tests, typecheck/build, and the offline attack/recovery demo pass. No existing dashboard process was stopped and no new live Cloudflare success is claimed.
 
 - Full `npm.cmd test`: 142 passed, 0 failed, 3 optional Docker tests skipped (October 4, 2026 verification after changing to Cloudflare-first scoring).
