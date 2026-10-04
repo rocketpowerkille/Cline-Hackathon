@@ -85,12 +85,16 @@ npm.cmd run warden -- vault seed [.env]
 npm.cmd run warden -- vault list
 npm.cmd run warden -- status
 npm.cmd run warden -- score [SESSION_ID]
+npm.cmd run warden -- dashboard
+npm.cmd run warden -- respond --session <ID> [--deterministic]
 npm.cmd run warden -- run [--only NAME[,NAME...]] -- <command> [args...]
 ```
 
 - The installed `warden` bin points at `bin/warden.mjs`, which registers `tsx` and loads the TypeScript CLI.
 - `vault add` reads the value from hidden TTY input; non-interactive input may be piped over stdin.
 - `warden run` requires a live ticket issued by an allowed agent action.
+- Dashboard binds to `127.0.0.1:8765`; manual approvals are resolved within 20 seconds before Cline's 30-second hook deadline. `warden respond --deterministic` needs no SDK credentials.
+- `npm.cmd audit --omit=dev` currently reports **32 transitive vulnerabilities** via `@cline/sdk` (14 high, 13 moderate, 5 low). Deterministic response does not load the SDK; remediate before production.
 
 ## Sandbox implementation
 

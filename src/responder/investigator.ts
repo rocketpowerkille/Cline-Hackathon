@@ -6,6 +6,7 @@ import type {
   GrantSummary,
   Investigation,
   RunTicketSummary,
+  SandboxSummary,
   SessionSummary,
   TaintedFileSummary,
 } from "./types.js";
@@ -30,10 +31,24 @@ export function investigateIncident(
     taintedFiles,
     grants,
     runTickets: readRunTickets(database, sessionIds),
+    sandboxRuns: readSandboxRuns(database, sessionIds),
     // Grants, not placeholders or tickets, prove that a real key reached this process session.
     exposedKeys: [...new Set(grants.filter((grant) => grant.sessionId === sessionId).map((grant) => grant.keyName))].sort(),
     generatedAt: new Date().toISOString(),
   };
+}
+
+function readSandboxRuns(database: DatabaseSync, ids: readonly string[]): SandboxSummary[] {
+  if (!ids.length) return [];
+  return database.prepare(`SELECT b.action_id, a.session_id, b.backend, b.verdict, b.reason,
+    b.inspected_files_json, b.changed_files_json, b.network_attempts_json, b.control_files_json, b.canaries_count
+    FROM sandbox_runs b JOIN actions a ON a.id=b.action_id
+    WHERE a.session_id IN (${ids.map(() => "?").join(",")}) ORDER BY b.id`).all(...ids).map((row) => ({
+    actionId: Number(row.action_id), sessionId: String(row.session_id), backend: String(row.backend),
+    verdict: String(row.verdict), reason: String(row.reason), inspectedFiles: parseStringArray(row.inspected_files_json),
+    changedFiles: parseStringArray(row.changed_files_json), networkAttempts: parseStringArray(row.network_attempts_json),
+    controlFiles: parseStringArray(row.control_files_json), canariesCount: Number(row.canaries_count),
+  }));
 }
 
 function traceOrigins(database: DatabaseSync, sessionId: string): string[] {

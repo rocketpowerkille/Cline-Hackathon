@@ -14,11 +14,22 @@ const strings = (value: unknown): string[] => {
   catch { return []; }
 };
 
+export function incidentName(sessionId: string): string {
+  return `incident_session_${Buffer.from(sessionId, "utf8").toString("hex")}.json`;
+}
+
+export function incidentSession(name: string): string | null {
+  const match = /^incident_session_([a-f0-9]{2,400})\.json$/i.exec(name);
+  if (!match || match[1]!.length % 2) return null;
+  const id = Buffer.from(match[1]!, "hex").toString("utf8");
+  return incidentName(id) === name.toLowerCase() ? id : null;
+}
+
 export interface DashboardSnapshot {
   decisions: Record<string, unknown>[];
   sessions: Record<string, unknown>[];
   approvals: Record<string, unknown>[];
-  incidents: { name: string; sessionId: string | null; status: string }[];
+  incidents: { name: string; sessionId: string | null; status: string; report: string | null }[];
 }
 
 export function readDashboard(root: string, now = Date.now()): DashboardSnapshot {
@@ -65,7 +76,7 @@ export function readDashboard(root: string, now = Date.now()): DashboardSnapshot
   const incidentsDir = wardenStatePath(root, "incidents");
   if (existsSync(incidentsDir)) {
     empty.incidents = readdirSync(incidentsDir, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && /^incident_[a-z\d_-]+\.(?:json|md)$/i.test(entry.name))
+      .filter((entry) => entry.isFile() && /^incident_[a-z\d._-]+\.(?:json|md)$/i.test(entry.name))
       .map((entry) => {
         const stateName = entry.name.replace(/^incident_/, "response_").replace(/\.md$/i, ".json");
         const stateFile = wardenStatePath(root, "incidents", stateName);
@@ -76,8 +87,35 @@ export function readDashboard(root: string, now = Date.now()): DashboardSnapshot
             status = state.closed === true ? "Closed" : "Open / review needed";
           } catch { /* Invalid responder state is never trusted. */ }
         }
-        return { name: entry.name, sessionId: null, status };
+        return { name: entry.name, sessionId: null, status, report: entry.name.endsWith(".md") ? entry.name : null };
       });
+  }
+  if (existsSync(filename)) {
+    const db = new DatabaseSync(filename, { readOnly: true });
+    try {
+      const blocked = db.prepare(`SELECT a.session_id, MAX(d.id) AS last_id FROM decisions d
+        JOIN actions a ON a.id=d.action_id WHERE d.verdict='block'
+        AND (d.labels_json LIKE '%"sandbox:block"%' OR d.labels_json LIKE '%"vault:canary"%')
+        GROUP BY a.session_id ORDER BY last_id DESC`).all();
+      for (const row of blocked) {
+        const id = String(row.session_id);
+        const stateFile = wardenStatePath(root, "incidents", `response_${id.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 80) || "session"}.json`);
+        let status = "Open / respond needed";
+        let report: string | null = null;
+        if (existsSync(stateFile) && lstatSync(stateFile).isFile()) {
+          try {
+            const state = JSON.parse(readFileSync(stateFile, "utf8")) as { sessionId?: string; closed?: boolean; reportPath?: string };
+            if (state.sessionId === id) {
+              status = state.closed ? "Closed" : "Open / review needed";
+              const name = state.reportPath?.split(/[\\/]/).at(-1);
+              if (name && /^incident_[a-z\d._-]+\.md$/i.test(name) && existsSync(wardenStatePath(root, "incidents", name))) report = name;
+            }
+          } catch { /* Untrusted incident state cannot spoof closure. */ }
+        }
+        empty.incidents = empty.incidents.filter((entry) => entry.name !== report);
+        empty.incidents.push({ name: incidentName(id), sessionId: display(id), status, report });
+      }
+    } finally { db.close(); }
   }
   return empty;
 }

@@ -27,7 +27,7 @@ cases("shell writes to control files", "exec", "ask", [
 
 test("apply_patch touching a control file -> ask", async () => {
   const patch = "*** Begin Patch\n*** Update File: src/a.ts\n@@\n-a\n+b\n*** Add File: .clinerules/evil.md\n+x\n*** End Patch";
-  assert.equal((await decide("write", "src/a.ts", { content: patch })).verdict, "ask");
+  assert.equal((await decide("write", "src/a.ts", { content: patch })).verdict, "block");
 });
 
 cases("writes to Warden state and hooks", "write", "block", [

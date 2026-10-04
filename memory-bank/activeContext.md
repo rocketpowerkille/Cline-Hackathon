@@ -2,7 +2,7 @@
 
 ## Current focus
 
-All segment branches are merged into `segment-demo-chain`, including risk scoring, responder, dashboard, installer, and demo Parts 1–2. Current work is merge reconciliation and final integration boundaries.
+Risk, responder and dashboard are now wired into the engine/CLI in this working tree. Parallel demo work owns `demo/`; do not touch it. The old demo assertion expects `ask` when the dashboard is absent, while the new final decision correctly blocks; hand this off to the demo owner.
 
 ## Repository state
 
@@ -49,7 +49,7 @@ All segment branches are merged into `segment-demo-chain`, including risk scorin
 ### Segment 08A Dashboard
 
 - Added a loopback-only authenticated dashboard, decision/session timeline, risk/sandbox evidence, approval endpoints/waiter, and incident listing.
-- Dashboard approval is not yet connected to the engine or root CLI.
+- Engine approval waits on the dashboard and finalizes the recorded ask in place. Root `warden dashboard` and `warden respond` dispatch. Open incidents are derived from sandbox/canary blocks before a report exists. Dashboard callback runs deterministic responder and serves reports behind authentication.
 
 ### Demo Parts 1 and 2
 
@@ -70,12 +70,12 @@ All segment branches are merged into `segment-demo-chain`, including risk scorin
 
 ## Next step
 
-Connect dashboard approval waiting to `Engine.decide`, add root CLI dispatch for dashboard/respond, then add responder recovery as demo Part 3.
+Demo owner should reconcile the legacy `ask` assertion and complete Part 3. Recheck live Cline hook approval timing and test actual model availability in a real environment.
 
 ## Remaining work
 
 - Improve observation of dynamically generated shell paths, writes performed inside scripts, and broad file listing/search output.
-- Wire the implemented responder/dashboard commands into the root CLI and connect approval waiting to the engine.
+- Validate a real browser/Cline hook approval under the 30-second VS Code timeout.
 - Add responder recovery to demo Part 3.
 - Add explicit review/trust-reset semantics rather than auto-clearing taint.
 
@@ -89,10 +89,10 @@ Connect dashboard approval waiting to `Engine.decide`, add root CLI dispatch for
 
 ## Verification
 
-- `npm.cmd test`: 117 passed, 0 failed, 0 skipped.
+- Non-demo tests: 118 passed, 0 failed, 3 Docker skips; full suite has one outdated demo `ask` assertion failure.
 - `npm.cmd run typecheck`: passed.
 - `git diff --check`: passed.
-- `npm.cmd audit --omit=dev`: 0 vulnerabilities.
+- `npm.cmd audit --omit=dev`: 32 SDK transitive findings (14 high, 13 moderate, 5 low).
 
 ## Active risks
 

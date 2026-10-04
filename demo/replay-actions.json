@@ -102,6 +102,25 @@
       }
     },
     {
+      "id": "cline-vault-whoami",
+      "host": "cline",
+      "event": "PreToolUse",
+      "payload": {
+        "clineVersion": "3.40.0",
+        "hookName": "PreToolUse",
+        "timestamp": "1760000000500",
+        "taskId": "cline-day-2",
+        "workspaceRoots": ["{{WORKSPACE}}"],
+        "preToolUse": {
+          "toolName": "execute_command",
+          "parameters": {
+            "command": "warden run --only NPM_TOKEN -- npm whoami",
+            "requires_approval": "false"
+          }
+        }
+      }
+    },
+    {
       "id": "cline-agents-read",
       "host": "cline",
       "event": "PreToolUse",

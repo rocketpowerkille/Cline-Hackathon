@@ -2,6 +2,8 @@ import type { AgentAction, DecisionRisk, RiskBackend, RiskQuestions } from "../c
 import { looksLikeInjection } from "../core/trust.js";
 import { scanWardenCanaries } from "../vault/canary.js";
 import { stripMessages } from "./targets.js";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 
 export const ASK_BUDGET = 1.2;
 export const BLOCK_BUDGET = 2.3;
@@ -76,7 +78,7 @@ export class RiskScorer {
     this.timeout = options.timeoutMs ?? TIMEOUT_MS;
   }
 
-  async score(action: AgentAction, intent: string): Promise<DecisionRisk> {
+  async score(action: AgentAction, intent: string, workspaceRoot?: string): Promise<DecisionRisk> {
     const start = performance.now();
     const fallback = (): DecisionRisk => {
       const values = heuristic(action, intent);
@@ -101,8 +103,9 @@ export class RiskScorer {
       headers: { "content-type": "application/json", authorization: `Bearer ${this.env.CLOUDFLARE_AUTH_TOKEN ?? this.env.CLOUDFLARE_API_TOKEN}` },
     });
     const deadline = start + this.timeout;
+    const cacheFile = workspaceRoot ? path.join(workspaceRoot, ".warden", "ollama-unavailable.json") : null;
     for (const candidate of candidates) {
-      if (candidate.backend === "ollama" && performance.now() < this.localUnavailableUntil) continue;
+      if (candidate.backend === "ollama" && (performance.now() < this.localUnavailableUntil || (cacheFile && cachedFailure(cacheFile, candidate.url)))) continue;
       const remaining = Math.min(deadline - performance.now(), candidate.backend === "ollama" && candidates.length > 1 ? Math.max(1, this.timeout * 0.55) : this.timeout);
       if (remaining <= 0) break;
       try {
@@ -120,8 +123,20 @@ export class RiskScorer {
       } catch {
         // Hook processes can reuse a scorer; avoid stalling every call when Ollama is down.
         if (candidate.backend === "ollama") this.localUnavailableUntil = performance.now() + 30_000;
+        if (candidate.backend === "ollama" && cacheFile) {
+          try { writeFileSync(cacheFile, JSON.stringify({ url: candidate.url, until: Date.now() + 120_000 }), { mode: 0o600 }); }
+          catch { /* Cache failure must not affect a security decision. */ }
+        }
       }
     }
     return fallback();
   }
+}
+
+function cachedFailure(filename: string, url: string): boolean {
+  try {
+    if (!existsSync(filename)) return false;
+    const data = JSON.parse(readFileSync(filename, "utf8")) as { url: string; until: number };
+    return data.url === url && Number.isFinite(data.until) && data.until > Date.now();
+  } catch { return false; }
 }

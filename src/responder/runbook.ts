@@ -255,6 +255,12 @@ export function writeIncidentReport(
     "",
     ...agentChain(investigation),
     "",
+    "## Sandbox evidence",
+    "",
+    ...(investigation.sandboxRuns.length ? investigation.sandboxRuns.map((run) =>
+      `- ${run.sessionId} action ${run.actionId}: **${run.verdict}** (${run.backend}); ${run.reason}; inspected: ${run.inspectedFiles.join(", ") || "none"}; changed: ${run.changedFiles.join(", ") || "none"}; network: ${run.networkAttempts.join(", ") || "none"}; control: ${run.controlFiles.join(", ") || "none"}; canaries: ${run.canariesCount}.`)
+      : ["- No sandbox run was recorded for this chain."]),
+    "",
     "## Real credential exposure",
     "",
     ...(investigation.exposedKeys.length

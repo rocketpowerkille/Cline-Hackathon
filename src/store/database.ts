@@ -87,6 +87,20 @@ export class WardenStore {
         Math.max(0, Math.round(durationMs)), new Date().toISOString());
   }
 
+  /** Resolve the already-recorded ask in place; keep its action, risk budget, and approval FK intact. */
+  finalizeApproval(decisionId: number, decision: Decision): void {
+    this.database.prepare("UPDATE decisions SET verdict=?, reason=?, labels_json=? WHERE id=? AND verdict='ask'")
+      .run(decision.verdict, decision.reason, JSON.stringify(decision.labels), decisionId);
+  }
+
+  finalizeDecisionLabels(decisionId: number, labels: string[]): void {
+    this.database.prepare("UPDATE decisions SET labels_json=? WHERE id=?").run(JSON.stringify(labels), decisionId);
+  }
+
+  markApprovedActionUntrusted(actionId: number): void {
+    this.database.prepare("UPDATE actions SET untrusted_input=1 WHERE id=?").run(actionId);
+  }
+
   record(action: AgentAction, decision: Decision, budgetIncrement = 0): StoredDecision {
     const now = new Date().toISOString();
     const transaction = this.database.prepare("BEGIN");

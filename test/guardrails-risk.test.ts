@@ -19,7 +19,7 @@ cases("shell reads of secret files", "exec", "ask", [
 
 test("only a vault-seeded, fully canaried .env is readable", async () => {
   writeFileSync(path.join(root, ".env"), `# demo\nNPM_TOKEN=${canary}\nexport QUOTED='${canary}' # note\nEMPTY=\n`);
-  assert.equal((await decide("read", ".env")).verdict, "ask", "not seeded yet");
+  assert.equal((await decide("read", ".env")).verdict, "block", "not seeded yet");
 
   store.database.prepare("INSERT INTO vault_entries VALUES ('NPM_TOKEN', ?, '.env', 'now', 'now')").run(canary);
   assert.equal((await decide("read", ".env")).verdict, "allow");
@@ -31,12 +31,12 @@ test("only a vault-seeded, fully canaried .env is readable", async () => {
 
   // A real value added after seeding makes the file secret again.
   writeFileSync(path.join(root, ".env"), `NPM_TOKEN=${canary}\nAWS_KEY=real-value\n`);
-  assert.equal((await decide("read", ".env")).verdict, "ask");
+  assert.equal((await decide("read", ".env")).verdict, "block");
 
   // Content alone is not trusted: an unseeded file with canary-looking values still asks.
   mkdirSync(path.join(root, "pkg"));
   writeFileSync(path.join(root, "pkg", ".env"), `NPM_TOKEN=${canary}\n`);
-  assert.equal((await decide("read", "pkg/.env")).verdict, "ask");
+  assert.equal((await decide("read", "pkg/.env")).verdict, "block");
 });
 
 cases("destructive commands", "exec", "ask", [

@@ -11,7 +11,7 @@ import { tempWorkspace } from "./helpers.js";
 export function guardrailHarness() {
   const root = tempWorkspace();
   const store = new WardenStore(":memory:");
-  const engine = new Engine(store, { workspaceRoot: root });
+  const engine = new Engine(store, { workspaceRoot: root, approval: async () => ({ id: null, status: "denied", reason: "test policy ask" }) });
   after(() => {
     store.close();
     rmSync(root, { recursive: true, force: true });
@@ -44,7 +44,8 @@ export function guardrailHarness() {
           assert.ok(findings.some((finding) => finding.verdict === "sandbox"), `${target} did not request sandbox`);
           continue; // Sandbox may allow or block based on actual evidence, not just the lexical rule.
         }
-        assert.equal(decision.verdict, expected, `${kind} "${target}" -> ${decision.verdict}: ${decision.reason}`);
+        assert.equal(decision.verdict, expected === "ask" ? "block" : expected, `${kind} "${target}" -> ${decision.verdict}: ${decision.reason}`);
+        if (expected === "ask") assert.ok(decision.labels.includes("approval:denied"));
       }
     });
 

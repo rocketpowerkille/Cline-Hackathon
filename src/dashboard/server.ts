@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { DatabaseSync } from "node:sqlite";
 import { wardenStatePath } from "../core/paths.js";
 import { resolveApproval } from "./approval.js";
-import { readDashboard } from "./data.js";
+import { incidentSession, readDashboard } from "./data.js";
 import { dashboardPage } from "./page.js";
 
 export interface DashboardServer { port: number; url: string; close(): Promise<void> }
@@ -63,6 +63,13 @@ export async function startDashboard(root: string, options: { port?: number; onR
       if (request.headers["x-warden-token"] !== token) return send(response, 403, '{"error":"unauthorized"}');
       if (request.method === "GET" && route === "/internal/health") return send(response, 200, '{"ok":true}');
       if (request.method === "GET" && route === "/api/state") return send(response, 200, JSON.stringify(readDashboard(root)));
+      const report = /^\/api\/reports\/(incident_[a-z\d._-]+\.md)$/i.exec(route);
+      if (request.method === "GET" && report) {
+        const file = wardenStatePath(root, "incidents", report[1]!);
+        if (!existsSync(file) || !lstatSync(file).isFile() || !realpathSync(file).startsWith(realpathSync(wardenStatePath(root, "incidents")) + (process.platform === "win32" ? "\\" : "/")))
+          return send(response, 404, '{"error":"report not found"}');
+        return send(response, 200, readFileSync(file, "utf8"), "text/plain; charset=utf-8");
+      }
       const match = /^\/api\/approvals\/([a-f\d-]{36})$/i.exec(route);
       if (request.method === "POST" && match) {
         if (request.headers.origin !== origin || request.headers["content-type"] !== "application/json")
@@ -77,14 +84,20 @@ export async function startDashboard(root: string, options: { port?: number; onR
           return send(response, changed ? 200 : 409, JSON.stringify({ resolved: changed }));
         } finally { db.close(); }
       }
-      const incident = /^\/api\/incidents\/(incident_[a-z\d_-]+\.(?:json|md))\/respond$/i.exec(route);
+      const incident = /^\/api\/incidents\/(incident_[a-z\d._-]+\.(?:json|md))\/respond$/i.exec(route);
       if (request.method === "POST" && incident) {
         if (request.headers.origin !== origin || request.headers["content-type"] !== "application/json")
           return send(response, 403, '{"error":"invalid origin or content type"}');
         if (!options.onRespond) return send(response, 501, '{"error":"responder not connected"}');
-        const file = wardenStatePath(root, "incidents", incident[1]!);
-        if (!existsSync(file) || !lstatSync(file).isFile() || !realpathSync(file).startsWith(realpathSync(wardenStatePath(root, "incidents")) + (process.platform === "win32" ? "\\" : "/")))
-          return send(response, 404, '{"error":"incident not found"}');
+        const session = incidentSession(incident[1]!);
+        if (session) {
+          if (!readDashboard(root).incidents.some((entry) => entry.name === incident[1] && entry.sessionId !== null && entry.status !== "Closed"))
+            return send(response, 404, '{"error":"incident not found"}');
+        } else {
+          const file = wardenStatePath(root, "incidents", incident[1]!);
+          if (!existsSync(file) || !lstatSync(file).isFile() || !realpathSync(file).startsWith(realpathSync(wardenStatePath(root, "incidents")) + (process.platform === "win32" ? "\\" : "/")))
+            return send(response, 404, '{"error":"incident not found"}');
+        }
         const input = await body(request);
         if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).length)
           return send(response, 400, '{"error":"invalid request"}');

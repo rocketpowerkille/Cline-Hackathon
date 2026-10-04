@@ -48,6 +48,19 @@ export interface RunTicketSummary {
   createdAt: string;
 }
 
+export interface SandboxSummary {
+  actionId: number;
+  sessionId: string;
+  backend: string;
+  verdict: string;
+  reason: string;
+  inspectedFiles: string[];
+  changedFiles: string[];
+  networkAttempts: string[];
+  controlFiles: string[];
+  canariesCount: number;
+}
+
 export interface Investigation {
   sessionId: string;
   trigger: string;
@@ -56,6 +69,7 @@ export interface Investigation {
   taintedFiles: TaintedFileSummary[];
   grants: GrantSummary[];
   runTickets: RunTicketSummary[];
+  sandboxRuns: SandboxSummary[];
   exposedKeys: string[];
   generatedAt: string;
 }

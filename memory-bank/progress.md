@@ -2,7 +2,7 @@
 
 ## Current status
 
-Segments 00–08 are implemented in the merged tree. Demo Parts 1 and 2 are complete. Remaining work is approval/root-CLI integration and demo Part 3 responder recovery.
+Segments 00–08 are integrated in the merged tree except for the parallel demo update. Engine approval, root CLI dashboard/respond, incident discovery/response, sandbox report evidence, and cross-hook Ollama miss caching are wired. Demo Part 2 still asserts a preliminary ask instead of the final block when no dashboard is running; demo owner must reconcile it.
 
 ## Milestones
 
@@ -13,10 +13,10 @@ Segments 00–08 are implemented in the merged tree. Demo Parts 1 and 2 are comp
 - [x] Segment 04 — Risk Scoring (live model integration not exercised)
 - [x] Segment 05 — Secret Vault
 - [x] Segment 06 — Sandbox (schema-v5 evidence persistence)
-- [x] Segment 07 — Cline Responder (root CLI/dashboard callback pending)
-- [x] Segment 08A — Dashboard (engine/root CLI handoff pending)
+- [x] Segment 07 — Cline Responder (root CLI/dashboard callback and sandbox evidence integrated)
+- [x] Segment 08A — Dashboard (engine/root CLI handoff integrated)
 - [x] Segment 08B — Install
-- [ ] Remaining CLI integration
+- [x] Remaining CLI integration
 - [ ] Offline demo (Parts 1–2 complete; Part 3 pending)
 
 ## What works
@@ -40,8 +40,7 @@ Segments 00–08 are implemented in the merged tree. Demo Parts 1 and 2 are comp
 
 ## Remaining work
 
-- Connect dashboard approval waiting to the engine and root CLI.
-- Dispatch standalone dashboard/respond commands from the root CLI.
+- Demo owner: update old no-dashboard `ask` expectation to final `block`; do not bypass approval in the production engine.
 - Add responder recovery to demo Part 3.
 - Broader shell/file observation and explicit reviewed trust reset.
 - Full offline demo and remaining dashboard/responder CLI integration.
@@ -56,7 +55,7 @@ Segments 00–08 are implemented in the merged tree. Demo Parts 1 and 2 are comp
 
 ## Mocks and shortcuts
 
-- `ask` still reaches hosts as cancel/deny pending Dashboard approval.
+- An `ask` is recorded, waits for the dashboard (20-second maximum), then finalizes to allow/block before the host receives a verdict. No-dashboard denies immediately.
 - CLEF model requests are tested with fakes; no live Ollama/Cloudflare evaluation or calibration was done. See `riskScoring.md`.
 - Existing Cline hook files are preserved rather than composed.
 - Automated tests use an in-memory secret store; native keychain needs manual smoke tests.
@@ -83,7 +82,7 @@ Segments 00–08 are implemented in the merged tree. Demo Parts 1 and 2 are comp
 
 ## Verification
 
-- `npm.cmd test`: 117 passed, 0 failed, 0 skipped.
+- Full `npm.cmd test`: 118 passed, 1 failing demo assertion, 3 optional Docker skips; non-demo suite: 118 passed, 0 failed, 3 skipped.
 - `npm.cmd run typecheck`: passed.
 - `git diff --check`: passed.
-- `npm.cmd audit --omit=dev`: 0 vulnerabilities.
+- `npm.cmd audit --omit=dev`: **32 findings (14 high, 13 moderate, 5 low)** in the `@cline/sdk` transitive dependency graph. Deterministic responder mode does not load the SDK; production remediation remains required.

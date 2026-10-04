@@ -15,12 +15,13 @@ test("four CLEF probabilities noisy-OR and a long series of small allowed steps 
   assert.ok(Math.abs(noisyOr({ injection: 0.1, secrets: 0.2, destructive: 0, offIntent: 0 }) - 0.28) < 1e-12);
   const store = new WardenStore(":memory:");
   const root = tempWorkspace();
-  const engine = new Engine(store, { workspaceRoot: root, stages: { risk: async () => ({ backend: "heuristic", latencyMs: 3,
+  const engine = new Engine(store, { workspaceRoot: root, approval: async () => ({ id: null, status: "denied", reason: "test denied" }), stages: { risk: async () => ({ backend: "heuristic", latencyMs: 3,
     questions: { injection: 0.12, secrets: 0, destructive: 0, offIntent: 0 }, actionProbability: 0.12, sessionBudget: 0 }) } });
   try {
     for (let step = 1; step <= 19; step++) {
       const result = await engine.decide(action("slow", "write", `step${step}.txt`));
-      assert.equal(result.verdict, step < 10 ? "allow" : step < 18 ? "ask" : "block");
+      assert.equal(result.verdict, step < 10 ? "allow" : "block");
+      if (step >= 10 && step < 18) assert.ok(result.labels.includes("approval:denied"));
       assert.equal(result.risk.backend, "heuristic");
       assert.equal(result.risk.latencyMs, 3);
     }
@@ -79,4 +80,20 @@ test("CLEF uses typed noul results; slow local falls back to remote structural s
   const nonLocal = new RiskScorer({ fetch: () => { throw new Error("nonlocal Ollama must not receive raw text"); },
     env: { WARDEN_OLLAMA_URL: "https://outside.invalid", WARDEN_RISK_OFFLINE: "0" } });
   assert.equal((await nonLocal.score(action("test"), "Maintain notes")).backend, "heuristic");
+});
+
+test("absent Ollama is cached across new scorer instances in one workspace", async () => {
+  const root = tempWorkspace();
+  const { mkdirSync } = await import("node:fs");
+  const path = await import("node:path");
+  mkdirSync(path.join(root, ".warden"));
+  let attempts = 0;
+  const fake: typeof fetch = async () => { attempts++; throw new Error("Ollama not running"); };
+  try {
+    const first = new RiskScorer({ fetch: fake, env: { WARDEN_RISK_OFFLINE: "0" } });
+    assert.equal((await first.score(action("cache"), "Maintain notes", root)).backend, "heuristic");
+    const second = new RiskScorer({ fetch: fake, env: { WARDEN_RISK_OFFLINE: "0" } });
+    assert.equal((await second.score(action("cache"), "Maintain notes", root)).backend, "heuristic");
+    assert.equal(attempts, 1, "a new hook process should not retry an unavailable Ollama");
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

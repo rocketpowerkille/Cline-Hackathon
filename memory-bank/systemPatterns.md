@@ -15,8 +15,9 @@ agent hook -> adapter -> AgentAction -> Engine.decide -> Decision -> adapter res
 4. Vault canary scan
 5. Risk score and session budget
 6. Write provenance
-7. Human approval resolution
-8. Decision persistence
+7. Persist preliminary `ask` decision so the existing approval foreign key can reference it
+8. Wait for human approval (20-second cap), finalize the same decision row to allow/block
+9. Issue run ticket and snapshot tainted write only after a final allow
 
 Only the engine combines stage results or changes verdict precedence.
 
@@ -111,7 +112,7 @@ trust result
 ## Risk layer (Segment 04)
 
 - `src/policy/risk.ts` provides typed CLEF noul questions, noisy-OR probability, weighted budget increment, and short-timeout Ollama/Cloudflare/offline heuristic scoring; details and sources: `riskScoring.md`.
-- Engine scores only non-post, non-prompt actions without higher-priority findings; reads count 0.2x and never block solely on risk. A generic budget reason is hidden by more specific findings.
+- Engine scores only non-post, non-prompt actions without higher-priority findings; reads count 0.2x and never block solely on risk. A generic budget reason is hidden by more specific findings. An absent Ollama is cached in `.warden/ollama-unavailable.json` for 120 seconds across hook processes.
 - Store persists `sessions.risk_budget` increments, `decisions.risk_latency_ms`, and the existing question/backend fields. Inference failure falls back to heuristic rather than failing open with an empty risk score.
 
 ## Install layer (Segment 08B)
@@ -139,6 +140,7 @@ warden init
 
 - Hook boundary catches failures and returns host-specific allow output.
 - Approval timeout is a policy result and returns deny.
+- The dashboard derives open incidents from blocked sandbox/canary decisions before a responder report exists. Authenticated Respond invokes deterministic recovery; investigation and report include the saved, redacted sandbox evidence.
 - Optional services use short timeouts and deterministic fallbacks.
 - Paths retain an original representation for logs and a canonical slash-separated representation for matching.
 - Tests use temporary or in-memory state and require no network or credentials.

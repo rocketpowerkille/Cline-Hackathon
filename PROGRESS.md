@@ -9,18 +9,18 @@
 | 04 Risk Scoring | Implemented; model/network caveats documented | Slow attack, routine workload, mock CLEF tests |
 | 05 Secret Vault | Complete | Verified in combined suite |
 | 06 Sandbox | Complete; evidence persisted in schema v5 | Redacted summary and decision linkage tested |
-| 07 Cline Responder | Complete; root CLI/dashboard callback pending | Deterministic + restricted two-session tests passed |
-| 08A Dashboard | Complete; engine/root CLI handoff pending | Local server, approval, security, and UI tests passed |
+| 07 Cline Responder | Integrated | Root CLI, dashboard callback, sandbox evidence in reports tested |
+| 08A Dashboard | Integrated | Live approvals, blocked-session incidents, report link tested |
 | 08B Install | Complete | CLI and generated-wrapper e2e passed |
 
 ## Current scope
 
-Segments 00–08 are implemented across the merged tree. Demo Parts 1 and 2 prove the leak and prevention chain. Remaining integration is dashboard approval inside `Engine.decide`, root CLI dispatch for dashboard/respond, and demo Part 3 responder recovery.
+Segments 00–08 are integrated across the merged tree. Engine asks now wait for a dashboard decision before returning to the host; root CLI dispatches dashboard/respond; sandbox and canary blocks appear as incidents before response. Demo integration remains with the separate demo owner: Part 2 currently asserts the old `ask` verdict when no dashboard is running, whereas the final verdict is now `block`.
 
 ## Deliberate shortcuts
 
-- `ask` still reaches hosts as cancel/deny until the implemented dashboard waiter is connected to `Engine.decide`.
-- Model availability and latency are bounded; live CLEF integration still needs an environment with a model installed or Cloudflare credentials. Ollama is attempted per fresh hook process, so an absent local server can add up to 350 ms per scored action.
+- An ask is recorded and shown while waiting, then finalized on that same decision row: approved allows, denied/expired blocks. The run ticket and tainted-write snapshot are created only after approval. Cline still aborts the entire task on a final block.
+- Model availability and latency are bounded; live CLEF integration still needs an environment with a model installed or Cloudflare credentials. Absent Ollama is cached under `.warden/` for 120 seconds across hook processes.
 - Existing non-Warden Cline event files cannot be merged because Cline exposes one workspace filename per event; init preserves them and doctor reports the collision.
 - Trust visibility for dynamically generated shell paths, writes inside scripts, and broad search/list outputs is incomplete.
 
@@ -59,12 +59,12 @@ Segments 00–08 are implemented across the merged tree. Demo Parts 1 and 2 prov
 - Deterministic investigator traces trust origins, tainted files, actual vault grants, and run tickets.
 - Deterministic response rotates only granted keys, verifies old-key rejection, restores snapshots, quarantines created files, preserves later edits, and writes readable incident reports.
 - Optional Cline SDK flow uses two restricted sessions with only Warden-provided tools.
-- Standalone responder CLI exists; root `warden respond` dispatch remains pending.
+- Root `warden respond` dispatch is active; deterministic mode requires no responder API credentials. Investigations and reports include persisted redacted sandbox evidence.
 
 ## Segment 08A dashboard result
 
 - Local-only authenticated dashboard, decision/session timeline, risk and sandbox evidence, approvals, and incident listing are implemented.
-- Approval resolution and waiting are implemented, but the engine and root CLI dispatcher are not connected yet.
+- Engine approval wait and root `warden dashboard` dispatch are active. Sandbox/canary blocks produce open dashboard incident entries before any report exists; Respond runs deterministic recovery and offers an authenticated report view.
 
 ## Demo Parts 1 and 2
 
@@ -74,7 +74,12 @@ Segments 00–08 are implemented across the merged tree. Demo Parts 1 and 2 prov
 
 ## Combined verification
 
-- `npm.cmd test`: 117 passed, 0 failed, 0 skipped.
+- Full `npm.cmd test`: 1 failing legacy demo assertion (expects `ask`, receives final `block` without a dashboard); remaining 118 tests passed and 3 optional Docker tests skipped. Non-demo suite: 118 passed, 0 failed, 3 skipped.
 - `npm.cmd run typecheck`: passed.
 - `git diff --check`: passed.
-- `npm.cmd audit --omit=dev`: 0 vulnerabilities.
+- `npm.cmd audit --omit=dev`: **32 vulnerabilities (14 high, 13 moderate, 5 low)** from the `@cline/sdk` dependency tree; do not treat the SDK as safe for production without remediation.
+
+## Known limitations
+
+- The separate demo owner must update its `demo/run-demo.ts` assertion from preliminary `ask` to final `block` (or start and approve via the dashboard); this branch did not touch `demo/`.
+- The 32 SDK transitive audit findings are unresolved. Deterministic response does not load the SDK, but the installed dependency still needs a remediated release or an explicit risk decision.

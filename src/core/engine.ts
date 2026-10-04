@@ -5,6 +5,7 @@ import { pathKey, type PathKey } from "../policy/targets.js";
 import { externalResult, looksLikeInjection, readKeys, snapshotTaintedWrite } from "./trust.js";
 import { shadowRun, type SandboxResult } from "../sandbox/shadow.js";
 import { ASK_BUDGET, BLOCK_BUDGET, budgetIncrement, RiskScorer } from "../policy/risk.js";
+import { waitForApproval, type ApprovalResult } from "../dashboard/approval.js";
 import type { WardenStore } from "../store/database.js";
 import { isFullyCanaried, scanWardenCanaries } from "../vault/canary.js";
 import type { AgentAction, Decision, Verdict } from "./types.js";
@@ -28,6 +29,7 @@ export interface EngineOptions {
   workspaceRoot?: string;
   stages?: Partial<EngineStages>;
   vault?: RunTicketIssuer;
+  approval?: (workspaceRoot: string, decisionId: number) => Promise<ApprovalResult>;
 }
 
 /** A Warden canary leaving through any outbound action is a confirmed exfiltration attempt. */
@@ -48,11 +50,14 @@ export class Engine {
   private readonly stages: EngineStages;
   private readonly workspaceRoot: string;
   private readonly vault: RunTicketIssuer | undefined;
+  private readonly approval: (workspaceRoot: string, decisionId: number) => Promise<ApprovalResult>;
 
   constructor(private readonly store: WardenStore, options: EngineOptions = {}) {
     this.stages = { ...defaultStages, ...options.stages };
     this.workspaceRoot = options.workspaceRoot ?? process.cwd();
+    if (!options.stages?.risk) this.stages.risk = (action, intent) => defaultScorer.score(action, intent, this.workspaceRoot);
     this.vault = options.vault;
+    this.approval = options.approval ?? waitForApproval;
   }
 
   async decide(action: AgentAction): Promise<Decision> {
@@ -111,18 +116,29 @@ export class Engine {
     }
     if (detected) decision.labels.push("trust:injection-attempt");
 
-    // Only a fully allowed `warden run` earns a ticket; any block/ask/sandbox suppresses it.
-    const runInvocation =
-      !action.post && decision.verdict === "allow" && action.kind === "exec" && this.vault
-        ? parseWardenRunCommand(action.target || action.content)
-        : null;
-    if (runInvocation) decision.labels.push("vault:run-ticket");
-
-    const advanced = decision.verdict === "allow" || (!!action.post && action.success !== false);
-    const ids = this.store.record({ ...evaluated, untrustedInput: advanced && evaluated.untrustedInput,
+    // First persist ask so the existing approvals FK can reference it; finalize that row after the click.
+    const ids = this.store.record({ ...evaluated, untrustedInput: (decision.verdict === "allow" || (!!action.post && action.success !== false)) && evaluated.untrustedInput,
       // Tool results are volatile and can contain secrets; retain only their separate hash.
       content: action.post ? "" : evaluated.content }, decision, increment);
     if (sandboxResult) this.store.recordSandboxRun(ids, sandboxResult, sandboxDuration);
+    if (!action.post && decision.verdict === "ask") {
+      let approval: ApprovalResult;
+      try { approval = await this.approval(this.workspaceRoot, ids.decisionId); }
+      catch { approval = { id: null, status: "denied", reason: "Approval denied: dashboard unavailable." }; }
+      decision.verdict = approval.status === "approved" ? "allow" : "block";
+      decision.reason = approval.status === "approved" ? `Approved in Warden dashboard. ${decision.reason}` : approval.reason;
+      decision.labels.push(`approval:${approval.status}`);
+      if (approval.id) decision.approvalId = approval.id;
+      this.store.finalizeApproval(ids.decisionId, decision);
+      if (decision.verdict === "allow" && evaluated.untrustedInput) this.store.markApprovedActionUntrusted(ids.actionId);
+    }
+    const runInvocation = !action.post && decision.verdict === "allow" && action.kind === "exec" && this.vault
+      ? parseWardenRunCommand(action.target || action.content) : null;
+    if (runInvocation) {
+      decision.labels.push("vault:run-ticket");
+      this.store.finalizeDecisionLabels(ids.decisionId, decision.labels);
+    }
+    const advanced = decision.verdict === "allow" || (!!action.post && action.success !== false);
     // Permission hooks can be denied; never taint a session or snapshot a write that did not happen.
     if (advanced) {
       if (effectiveOrigin) this.store.markUntrusted(action.sessionId, effectiveOrigin.reason, effectiveOrigin.originSession);

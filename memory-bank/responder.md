@@ -97,8 +97,8 @@ If queryable responder state is added later, reserve append-only schema migratio
 
 - Real npm/GitHub rotation providers are mocked.
 - Exact post-attack edit detection is available only when the ledger contains an exact full-write content hash. Patch/shell/dynamic writes are conservatively flagged for review.
-- The responder should eventually consume persisted `sandbox_runs` evidence when that table exists.
-- The root `warden` CLI needs to dispatch to `src/cli/respond.ts` in a later integration pass.
+- Investigator and report now include persisted, redacted `sandbox_runs` evidence for the traced session chain.
+- Root `warden respond` dispatch and dashboard deterministic response callback are integrated.
 - The responder should eventually be exercised by the full offline demo.
 - `@cline/sdk@0.0.90` currently has declaration incompatibilities with strict NodeNext, so the runtime adapter is isolated behind a locally typed dynamic import rather than weakening `tsconfig`.
 - Installing the current SDK adds transitive audit findings (32 total at implementation time: 14 high, 13 moderate, 5 low). No direct vulnerable API is used in deterministic mode, but production use should update once the SDK publishes remediated dependencies.

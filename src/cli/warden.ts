@@ -7,6 +7,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseWardenRunArgv } from "./args.js";
 import { status } from "./status.js";
 import { score } from "./score.js";
+import { dashboard } from "./dashboard.js";
+import { runRespondCli } from "./respond.js";
 import { wardenStatePath } from "../core/paths.js";
 import { doctorWarden, installWarden, uninstallWarden, type InstallResult } from "../install/init.js";
 import { WardenStore } from "../store/database.js";
@@ -45,6 +47,17 @@ export async function runCli(
     io.stdout.write(score(root, subcommand));
     return 0;
   }
+  if (command === "dashboard") {
+    if (subcommand || rest.length) throw new Error("Usage: warden dashboard");
+    const server = await dashboard(root, io.stdout);
+    if (io === defaultIo) {
+      const shutdown = () => { void server.close().then(() => { process.exitCode = 0; }); };
+      process.once("SIGINT", shutdown);
+      process.once("SIGTERM", shutdown);
+    }
+    return 0;
+  }
+  if (command === "respond") return runRespondCli([subcommand, ...rest].filter((value): value is string => value !== undefined), io);
 
   if (command === "init") {
     const seedEnv = subcommand === "--seed-env";
@@ -117,7 +130,7 @@ export async function runCli(
       });
     }
 
-    throw new Error("Usage: warden <init|uninstall|doctor|status|score|vault add|seed|list|run>");
+    throw new Error("Usage: warden <init|uninstall|doctor|status|score|dashboard|respond|vault add|seed|list|run>");
   } finally {
     context.close();
   }
