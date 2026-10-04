@@ -2,7 +2,7 @@
 
 ## Current focus
 
-Segments 01 (Agent Hooks) and 05 (Secret Vault) are combined and verified on `segment-05-vault`. Segment 05 wiring is complete; Segment 02 is next.
+Segments 01, 05, and the standalone Segment 06 sandbox are implemented and verified. Segment 02 is next and will wire guardrail-requested sandbox execution into the engine.
 
 ## Repository state
 
@@ -33,6 +33,15 @@ Segments 01 (Agent Hooks) and 05 (Secret Vault) are combined and verified on `se
 - Added command-bound session attribution for `warden run`, including `--only` selection.
 - Added the initial dependency-free CLI and a JavaScript launcher that registers `tsx`.
 
+### Segment 06
+
+- Added synchronous `shadowRun()` so the sandbox can fit the existing hook path.
+- Added an offline static analyzer that catches the demo `.env` + base64 + curl attack without Docker.
+- Added bounded recursive inspection of workspace-local shell, PowerShell, JavaScript, Python, batch, and command scripts.
+- Added optional Docker shadow execution using an already-cached image, a throwaway copy, no network, no host application environment, and resource/time limits.
+- Added fake curl/wget wrappers, file manifests, canary scans, control-file change detection, and timeout cleanup.
+- Added broader secret exclusion/redaction before the shadow copy is mounted.
+
 ## Current decisions
 
 - Event names may come from installer arguments and fall back to the host payload.
@@ -47,14 +56,33 @@ Segments 01 (Agent Hooks) and 05 (Secret Vault) are combined and verified on `se
 - Matching multiple live tickets is ambiguous and fails closed rather than guessing a session.
 - Grants are recorded only after the child emits its successful `spawn` event.
 - Vault `add` prompts through hidden TTY input; the value is never accepted as a command argument.
+- The sandbox always runs static inspection first and combines that evidence with Docker observations.
+- Docker is optional and never pulls images on the hook path.
+- Windows-native commands use static fallback instead of being sent to a Linux container.
+- Missing Docker, daemon failure, missing image, or unsafe image environment selects static fallback.
+- Sandbox timeouts, execution errors, and outside-workspace script references fail closed.
+- `shadowRun` exposes a result callback for future ledger integration without coupling to the store.
 
 ## Next step
 
-Proceed with Segment 02.
+Proceed with Segment 02 and connect only its `sandbox` guardrail result to `shadowRun()`.
+
+## Remaining Segment 06 wiring
+
+Deferred until Segment 02 is available:
+
+1. Give `Engine` the protected repository root or an injected sandbox runner; do not infer the root from an action target.
+2. Run `shadowRun({ workspaceRoot, action })` only when Guardrails returns `sandbox`.
+3. Convert sandbox `block` into the final engine block reason and merge all sandbox labels into the decision.
+4. Convert sandbox `allow` back to the normal engine pipeline; continue with vault canary scan, risk scoring, provenance, and approval rather than treating it as an unconditional final allow.
+5. Add `sandbox_runs` to the shared schema and persist summaries only: backend, verdict, reason, labels, changed/control/secret files, canaries, network attempts, exit code, timeout, and duration. Never persist stdout, stderr, host environment, or secret values.
+6. Add engine tests proving the sandbox is not called for `allow`, `ask`, or `block` guardrail results, and is called exactly once for `sandbox`.
+7. Add hook-level tests proving a poisoned setup script is denied while a harmless shadow result proceeds.
+8. Add the demo trace after Guardrails and trust tracking can create the intended untrusted-session path.
 
 ## Verification
 
-- `npm.cmd test`: 42 passed, 0 failed.
+- `npm.cmd test`: 51 passed, 0 failed, 3 Docker-only tests skipped.
 - `npm.cmd run typecheck`: passed.
 - `git diff --check`: passed.
 - `npm.cmd audit --omit=dev`: 0 vulnerabilities.
@@ -67,3 +95,5 @@ Proceed with Segment 02.
 - Cursor `ask` is not reliably enforced; Warden uses deny at the host boundary.
 - Ollama System One compatibility remains for Segment 04.
 - The real `@napi-rs/keyring` backend is not exercised by automated tests.
+- Docker runtime behavior remains conditionally tested because the local daemon is unavailable; static fallback is fully exercised.
+- Until the wiring above lands, `shadowRun()` is not called by `Engine.decide()` and cannot affect live hook verdicts.
