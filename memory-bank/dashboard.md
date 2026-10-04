@@ -1,0 +1,28 @@
+# Segment 08A — Local Dashboard and Approval Handoff
+
+Implemented in `src/dashboard/{approval,data,page,server}.ts`, `src/cli/dashboard.ts`, and `test/dashboard.test.ts`. No dashboard framework or runtime dependency. The shared engine, migrations/schema, store, root CLI dispatcher, responder, and demo folders were not edited.
+
+## Starting / merging
+
+- `startDashboard(workspaceRoot, { port?: number, onRespond?: (reportName) => Promise<void> | void })` listens **only on `127.0.0.1`**; the default API chooses a free port. Returns `{ port, url, close() }`. The default `src/cli/dashboard.ts` command calls it on port **8765** and prints the URL. The command keeps the server alive; the root `src/cli/warden.ts` dispatcher must import `dashboard` and route `warden dashboard` **before** opening a vault/keychain context. Do not treat the command as integrated yet.
+- A random per-process token and bound port are written to `.warden/dashboard.json` (mode 0600 where supported). `close()` removes only its own matching marker. If a stale marker remains, verify no dashboard is running and remove it before restarting. The marker is ignored from Git with the rest of `.warden/`.
+- The separate engine handoff is `await waitForApproval(workspaceRoot, decisionId)` from `src/dashboard/approval.ts`. The *ask* decision must already be recorded in `decisions`, since `approvals.decision_id` is an existing foreign key; pass the persisted ID, then wait **before** returning to the host. Its result is `{ id, status: 'approved'|'denied'|'expired', reason }`. A missing/unreachable dashboard returns `denied` immediately with a start-dashboard message. Normal timeout is 20 seconds (bounded to 20 seconds even when caller provides a larger value); expiry and database errors fail closed. Resolve a permitted ask to an allow decision only after approval; otherwise return a deny/block host response. Ensure the eventual engine integration records the final decision/approval outcome without duplicating effects or exposing a live ticket before approval. Cline file-hook cancel currently aborts the whole task, so this wait must happen within the host's 30-second timeout.
+- `resolveApproval(db, id, 'approved'|'denied')` atomically updates only a pending, *unexpired* approval. Racing/duplicate/late clicks fail. There is no unattended approval path.
+
+## UI and responder seam
+
+- Large-screen lime/black layout with rounded white cards. `/` loads a nonce-protected inline script; authenticated `GET /api/state` polls SQLite every 750 ms. Sessions show trusted/untrusted and first-provenance text (for example issue → Cursor → AGENTS.md → Cline). The decision stream renders all recorded decisions with optional probability, question scores, budget, backend/latency, and redacted sandbox evidence. Pending approvals have allow/deny and a live expiry countdown. Existing `.warden/incidents/incident_*.md` reports appear by filename/status; private report bodies are **not** served.
+- The Respond button is disabled by default. Optional `onRespond(reportName)` wires the button in a later merge; the callback receives only a validated existing report basename and must perform its own authorization/idempotency checks. Without a callback the endpoint answers 501, never silently claims recovery.
+- The dashboard queries the existing v5 tables directly in read-only mode where possible and does not create missing ledger files. An actual approval transition opens the existing ledger separately. All displayed ledger strings are redacted and inserted via DOM `textContent`, not HTML injection.
+
+## Security boundary
+
+- Every endpoint requires an exact loopback `Host` and loopback TCP peer. JSON endpoints require the per-process capability header (`x-warden-token`), unavailable to unrelated websites due to same-origin policy; state-changing requests also require an exact `Origin: http://127.0.0.1:<port>` and `Content-Type: application/json`. No CORS, cookies, permissive origins, or GET-side effects. The UI uses CSP (nonce script, `connect-src 'self'`), no referrer, no frames, and no-store responses. Expiration is verified in SQL when a button is clicked.
+- This design blocks ordinary malicious websites from approving actions, **not a hostile local process or another user with read access to the workspace marker or browser**. Do not reverse-proxy the dashboard or bind it to a public interface. The display redactor is defense in depth; upstream ledger content should remain sanitized. Incidents are listed by safe basenames, not file contents.
+- The waiter health check is a **real local loopback request** (400 ms maximum); unit tests only call in-process localhost services, never the external network or model APIs.
+
+## Verification and remaining integration
+
+- `test/dashboard.test.ts` covers live state and taint provenance, guarded allow + single-use click, hostile origin/host/missing token/bad content-type, expiry and absent-dashboard denial, and the opt-in responder callback.
+- `npm.cmd run typecheck` passed; full `npm.cmd test` at implementation: **113 passed, 3 optional Docker skips, 0 failed**; `git diff --check` passed. The optional Docker skips are unrelated to the dashboard.
+- **Not yet connected:** root CLI dispatcher, engine approval stage, actual responder callback, and installer startup instructions. The dashboard works directly via `startDashboard()` or `src/cli/dashboard.ts`'s exported `dashboard()` until the dispatcher is merged.
