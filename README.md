@@ -35,6 +35,12 @@ Still requiring integration verification: real Cline/Cursor host sessions, live 
 
 ## Cloudflare Workers AI scoring (preferred CLEF backend)
 
+Hooks default to **1000 ms for configured Cloudflare** and **350 ms for local Ollama**. Set `WARDEN_CLEF_TIMEOUT_MS` (1–5000 ms) in Warden's `.env` or the editor's inherited environment to override; explicit environment values win. Remove an old `WARDEN_CLEF_TIMEOUT_MS=350` override to use the new Cloudflare default.
+
+Cloudflare's combined `p <= 0.30` is treated as baseline noise: its raw score stays visible, but adds zero session budget. Above 0.30, the existing `-ln(1-p)` increment applies (reads weighted 0.2). This floor does not affect heuristic/Ollama accumulation or deterministic guardrails, canaries, and sandbox decisions. It is a practical noise filter, not a calibrated safety guarantee; existing accumulated budgets are not reset.
+
+Cloudflare requests remain **structural-only by default**. Optionally set `WARDEN_CLOUDFLARE_SEND_SAFE_STATE=1` in Warden's `.env` or the editor environment to include a bounded action/intent excerpt. The complete input is screened before truncation; suspected credentials, secret-file references, or canaries omit the entire excerpt. URLs are reduced to origins. **This pattern-based filter cannot guarantee arbitrary text is secret-free; opt-in may send source code, paths, and task text to Cloudflare.** Leave it unset unless that data sharing is acceptable. Restart the editor after changing inherited environment settings.
+
 Create a scoped Cloudflare API token with access to Workers AI. **From the Warden checkout** (not your protected project), copy its configuration template:
 
 ```powershell
@@ -326,7 +332,7 @@ $request = @{ model = 'clef-flash'; state = 'A harmless greeting'; questions = @
 Invoke-RestMethod -Uri 'http://127.0.0.1:11434/v1/systemone' -Method Post -ContentType 'application/json' -Body $request
 ```
 
-The diagnostic allows up to 60 seconds to warm a cold model. **Agent hooks are faster:** Warden's default total inference budget is **350 ms** per action; a cold start or CPU-only 9B run may exceed it, so that action falls back to the heuristic even when the diagnostic succeeds. If your computer consistently responds more slowly, set a measured `WARDEN_CLEF_TIMEOUT_MS` between **1 and 5000** in the environment inherited by the **editor**, then restart the editor (for example, `$env:WARDEN_CLEF_TIMEOUT_MS='1200'; code C:\path\to\your-project` in PowerShell). Larger limits can noticeably slow each tool call; keep enough margin below Cline's 30-second hook timeout. Check the dashboard's **risk backend and latency** on subsequent ordinary agent actions; `backend=cloudflare` is expected when configured, `backend=ollama` only with local opt-in and no Cloudflare credentials, and `backend=heuristic` means offline fallback. A failed Ollama check is cached temporarily under `.warden/`. Set `WARDEN_RISK_OFFLINE=1` in the editor's environment to force offline heuristic scoring; remove that variable and restart the editor to enable CLEF again. Local Ollama requests are restricted to loopback and screened for likely secrets, but this is **pattern-based**, not a proof that arbitrary content contains no secrets.
+The diagnostic allows up to 60 seconds to warm a cold model. **Agent hooks are faster:** local Ollama defaults to **350 ms** per action; configured Cloudflare defaults to **1000 ms**. A cold start or CPU-only 9B run may exceed the hook allowance, so that action falls back to the heuristic even when the diagnostic succeeds. Override with `WARDEN_CLEF_TIMEOUT_MS` between **1 and 5000** in Warden's `.env` or the editor's inherited environment. Restart the editor after changing inherited settings. Larger limits slow tool calls; keep margin below Cline's 30-second hook deadline. Inspect backend and latency on ordinary actions: configured Cloudflare should show `cloudflare`, opt-in local inference without Cloudflare should show `ollama`, and fallback shows `heuristic`. Set `WARDEN_RISK_OFFLINE=1` to force offline scoring. Local requests are loopback-only and screened for likely secrets, but the filter is **pattern-based**, not proof that arbitrary content contains no secrets.
 
 ### Should we Dockerize CLEF?
 

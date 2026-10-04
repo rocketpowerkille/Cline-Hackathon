@@ -2,6 +2,13 @@
 
 ## Verified CLEF API (2026-10-04)
 
+### Current hook behavior (supersedes historical defaults below)
+
+- Configured Cloudflare defaults to 1000 ms; local Ollama remains 350 ms. `WARDEN_CLEF_TIMEOUT_MS` accepts 1–5000 ms from the process or allowlisted package `.env`, with explicit process values winning. Invalid overrides revert to the selected provider's default.
+- Cloudflare combined p <= 0.30 adds zero budget while raw answers/p remain visible. Above the floor, the existing `-ln(1-p)` increment applies. Other backends retain all small signals. The floor is a usability filter, not model calibration; existing accumulated budgets are not reset.
+- Structural-only remains the Cloudflare default. `WARDEN_CLOUDFLARE_SEND_SAFE_STATE=1` adds a gated, URL-redacted 1500-character excerpt including action and intent. Screen the complete raw fields before serialization/truncation; omit the excerpt on likely secrets/canaries/secret-file references. Pattern-based screening cannot guarantee that arbitrary text is secret-free, and opt-in may share source code.
+- The user observed live Cloudflare latency of 400–800 ms and a benign baseline around p=0.2. Local regression transports verify delayed 500 ms success and 15 benign read/exec/write decisions without approval or budget growth; this implementation run does not claim a new live Cloudflare test.
+
 Primary references:
 
 - Ollama clef-flash library: https://ollama.com/library/clef-flash

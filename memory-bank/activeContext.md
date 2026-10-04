@@ -2,6 +2,13 @@
 
 ## Current focus
 
+### Cloudflare latency and baseline fix (2026-10-04)
+
+- User reports real Cloudflare latency of 400–800 ms and benign combined p around 0.2. Configured Cloudflare hook default is now 1000 ms; local default remains 350 ms. Valid explicit overrides win, and the package `.env` now loads `WARDEN_CLEF_TIMEOUT_MS`.
+- Only Cloudflare combined p <= 0.30 adds zero budget; higher scores retain the existing increment. Heuristic/Ollama small-signal accumulation and deterministic policies are unchanged. Existing budgets remain sticky.
+- `WARDEN_CLOUDFLARE_SEND_SAFE_STATE=1` explicitly permits a gated 1500-character action/intent excerpt. Structural-only stays the default; full input is screened before truncation, URL details are removed, and sensitive input omits the excerpt. Pattern filtering is not a guarantee of secrecy.
+- Regression tests cover 15 benign Cloudflare actions, meaningful-risk escalation, 500 ms inference, overrides, opt-in privacy, and secrets after the excerpt limit. Dependency-manifest edits present before this work are user-owned and preserved.
+
 Segments 00–08 and the three-part offline demo are integrated. Fresh-init observation hooks, conservative no-Docker execution, serialized risk thresholds, compiled runtime, and fail-closed provider defaults were added in the hardening sweep. External host, model, Docker and real-credential checks remain pending.
 
 ## Repository state

@@ -121,6 +121,13 @@ test("hook inference timeout has a safe configurable bound", () => {
   assert.equal(clefTimeout({ WARDEN_CLEF_TIMEOUT_MS: "0" }), 350);
   assert.equal(clefTimeout({ WARDEN_CLEF_TIMEOUT_MS: "6000" }), 350);
   assert.equal(clefTimeout({ WARDEN_CLEF_TIMEOUT_MS: "n/a" }), 350);
+  for (const key of ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_AUTH_TOKEN", "CLOUDFLARE_API_KEY"]) {
+    const env = { CLOUDFLARE_ACCOUNT_ID: "account", [key]: "fake" };
+    assert.equal(clefTimeout(env), 1000);
+    assert.equal(clefTimeout({ ...env, WARDEN_CLEF_TIMEOUT_MS: "750" }), 750);
+    for (const invalid of ["0", "6000", "n/a"]) assert.equal(clefTimeout({ ...env, WARDEN_CLEF_TIMEOUT_MS: invalid }), 1000);
+  }
+  assert.equal(clefTimeout({ CLOUDFLARE_ACCOUNT_ID: "account" }), 350);
 });
 
 test("engine records a CLEF-backed decision and its four typed answers", async () => {

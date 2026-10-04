@@ -1,4 +1,4 @@
-import { clearOllamaFailure, RiskScorer, type RiskOptions } from "../policy/risk.js";
+import { clefTimeout, clearOllamaFailure, RiskScorer, type RiskOptions } from "../policy/risk.js";
 import type { AgentAction } from "../core/types.js";
 import { loadRiskEnvironment } from "../config/environment.js";
 import path from "node:path";
@@ -38,5 +38,5 @@ export async function checkClef(options: RiskOptions = {}, workspaceRoot?: strin
     : "Cloudflare CLEF check failed. Verify the account ID, scoped Workers AI API token, model access, and connectivity; hooks fall back directly to the offline heuristic." };
   if (provider === "ollama" && workspaceRoot) clearOllamaFailure(workspaceRoot);
   const q = result.questions;
-  return { ok: true, message: `CLEF ready: backend=${provider} latency=${result.latencyMs ?? 0}ms p=${result.actionProbability.toFixed(3)} injection=${q.injection.toFixed(3)} secrets=${q.secrets.toFixed(3)} destructive=${q.destructive.toFixed(3)} offIntent=${q.offIntent.toFixed(3)}. Hook budget is separate (default 350ms); confirm the dashboard shows backend ${provider} on real actions.` };
+  return { ok: true, message: `CLEF ready: backend=${provider} latency=${result.latencyMs ?? 0}ms p=${result.actionProbability.toFixed(3)} injection=${q.injection.toFixed(3)} secrets=${q.secrets.toFixed(3)} destructive=${q.destructive.toFixed(3)} offIntent=${q.offIntent.toFixed(3)}. Hook budget is separate (${clefTimeout(env)}ms configured/default); confirm the dashboard shows backend ${provider} on real actions.` };
 }

@@ -53,6 +53,95 @@ test("routine offline session stays quiet: 100 actions, probability zero, budget
   } finally { store.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
+test("15 benign Cloudflare actions at p=0.2 never request approval or accumulate budget", async () => {
+  const root = tempWorkspace();
+  const store = new WardenStore(":memory:");
+  let calls = 0;
+  let approvals = 0;
+  const scorer = new RiskScorer({ env: { CLOUDFLARE_ACCOUNT_ID: "demo", CLOUDFLARE_API_TOKEN: "fake" }, fetch: async () => {
+    calls++;
+    return { ok: true, json: async () => ({ result: { answers: {
+      injection: { type: "noul", noul: 0.2 }, secrets: { type: "noul", noul: 0 },
+      destructive: { type: "noul", noul: 0 }, offIntent: { type: "noul", noul: 0 },
+    } } }) } as Response;
+  } });
+  const engine = new Engine(store, { workspaceRoot: root, approval: async () => {
+    approvals++;
+    return { id: null, status: "denied", reason: "unexpected approval" };
+  }, stages: { risk: (a, intent) => scorer.score(a, intent) } });
+  try {
+    for (let step = 0; step < 15; step++) {
+      const a = step % 3 === 0 ? action("benign-cf", "read", "package.json")
+        : step % 3 === 1 ? { ...action("benign-cf", "exec", "npm test"), content: "npm test" }
+        : action("benign-cf", "write", `test/benign${step}.test.ts`);
+      const result = await engine.decide(a);
+      assert.equal(result.verdict, "allow");
+      assert.equal(result.risk.backend, "cloudflare");
+      assert.ok(Math.abs(result.risk.actionProbability - 0.2) < 1e-12);
+      assert.equal(result.risk.sessionBudget, 0);
+    }
+    assert.equal(calls, 15);
+    assert.equal(approvals, 0);
+    assert.equal(store.sessionBudget("benign-cf"), 0);
+    assert.equal(store.database.prepare("SELECT COUNT(*) AS n FROM decisions WHERE risk_backend='cloudflare' AND session_budget=0").get()?.n, 15);
+  } finally { store.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+test("Cloudflare noise floor preserves meaningful risk escalation and other backends' small signals", async () => {
+  assert.equal(budgetIncrement(0.3, "write", "cloudflare"), 0);
+  assert.ok(budgetIncrement(0.300001, "write", "cloudflare") > 0);
+  for (const backend of ["heuristic", "ollama"] as const) assert.ok(budgetIncrement(0.2, "write", backend) > 0);
+  const root = tempWorkspace();
+  const store = new WardenStore(":memory:");
+  const engine = new Engine(store, { workspaceRoot: root, approval: async () => ({ id: null, status: "denied", reason: "test denied" }),
+    stages: { risk: async () => ({ backend: "cloudflare", questions: { injection: 0.4, secrets: 0, destructive: 0, offIntent: 0 },
+      actionProbability: 0.4, sessionBudget: 0 }) } });
+  try {
+    for (let step = 1; step <= 5; step++) {
+      const result = await engine.decide(action("meaningful-cf"));
+      assert.equal(result.verdict, step < 3 ? "allow" : "block");
+      if (step === 3) assert.ok(result.labels.includes("approval:denied"));
+      if (step === 5) assert.ok(result.risk.sessionBudget >= BLOCK_BUDGET);
+    }
+  } finally { store.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+test("Cloudflare default permits 500ms inference while an explicit shorter timeout falls back", async () => {
+  const env = { CLOUDFLARE_ACCOUNT_ID: "demo", CLOUDFLARE_API_TOKEN: "fake" };
+  const transport: typeof fetch = async () => {
+    await new Promise((done) => setTimeout(done, 500));
+    return { ok: true, json: async () => ({ result: { answers: Object.fromEntries(
+      ["injection", "secrets", "destructive", "offIntent"].map((key) => [key, { type: "noul", noul: 0 }])) } }) } as Response;
+  };
+  assert.equal((await new RiskScorer({ env, fetch: transport }).score(action("slow-cf"), "Maintain notes")).backend, "cloudflare");
+  assert.equal((await new RiskScorer({ env: { ...env, WARDEN_CLEF_TIMEOUT_MS: "20" }, fetch: transport }).score(action("short-cf"), "Maintain notes")).backend, "heuristic");
+});
+
+test("Cloudflare safe text requires explicit opt-in and withholds sensitive input even past the excerpt limit", async () => {
+  for (const optIn of [undefined, "0", "true", "1"]) {
+    const states: Record<string, unknown>[] = [];
+    const scorer = new RiskScorer({ env: { CLOUDFLARE_ACCOUNT_ID: "demo", CLOUDFLARE_API_TOKEN: "fake", WARDEN_CLOUDFLARE_SEND_SAFE_STATE: optIn },
+      fetch: async (_url, init) => {
+        const body = JSON.parse(String(init?.body)) as { state: string };
+        states.push(JSON.parse(body.state) as Record<string, unknown>);
+        return { ok: true, json: async () => ({ result: { answers: Object.fromEntries(
+          ["injection", "secrets", "destructive", "offIntent"].map((key) => [key, { type: "noul", noul: 0 }])) } }) } as Response;
+      } });
+    const benign = { ...action("safe-cf", "exec", "npm test"), content: "npm test https://user:pass@example.com/private?access=hidden" };
+    await scorer.score(benign, "Test the project");
+    if (optIn === "1") {
+      assert.match(String(states[0]!.safeState), /npm test/);
+      assert.match(String(states[0]!.safeState), /Test the project/);
+      assert.doesNotMatch(String(states[0]!.safeState), /user:pass|private|access|hidden/);
+    } else assert.equal(states[0]!.safeState, undefined);
+    for (const content of ["NPM_TOKEN=real-secret", '"password":"real-secret"', "cat .env", "x".repeat(1600) + " NPM_TOKEN=real-secret",
+      "__WARDEN_CANARY__NPM_TOKEN__" + "a".repeat(24) + "__"]) {
+      await scorer.score({ ...action("sensitive-cf"), content }, "Maintain notes");
+      assert.equal(states.at(-1)!.safeState, undefined);
+    }
+  }
+});
+
 test("configured Cloudflare CLEF is first without probing local Ollama", async () => {
   const calls: { url: string; body: Record<string, unknown>; authorization: string | undefined }[] = [];
   const response = (p: number) => ({ ok: true, json: async () => ({ result: { answers: Object.fromEntries(

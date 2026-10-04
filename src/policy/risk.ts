@@ -10,6 +10,8 @@ import { fileURLToPath } from "node:url";
 export const ASK_BUDGET = 1.2;
 export const BLOCK_BUDGET = 2.3;
 export const DEFAULT_CLEF_TIMEOUT_MS = 350;
+export const DEFAULT_CLOUDFLARE_TIMEOUT_MS = 1_000;
+export const CLOUDFLARE_NOISE_FLOOR = 0.3;
 const MAX_CLEF_TIMEOUT_MS = 5_000;
 const keys = ["injection", "secrets", "destructive", "offIntent"] as const;
 type Transport = typeof fetch;
@@ -32,18 +34,24 @@ export const questions = {
 export interface RiskOptions { fetch?: Transport; env?: NodeJS.ProcessEnv; timeoutMs?: number }
 
 export function clefTimeout(env: NodeJS.ProcessEnv): number {
+  const fallback = env.CLOUDFLARE_ACCOUNT_ID && (env.CLOUDFLARE_API_TOKEN || env.CLOUDFLARE_AUTH_TOKEN || env.CLOUDFLARE_API_KEY)
+    ? DEFAULT_CLOUDFLARE_TIMEOUT_MS : DEFAULT_CLEF_TIMEOUT_MS;
   const raw = env.WARDEN_CLEF_TIMEOUT_MS;
-  if (raw === undefined) return DEFAULT_CLEF_TIMEOUT_MS;
-  if (!/^\d+$/.test(raw)) return DEFAULT_CLEF_TIMEOUT_MS;
+  if (raw === undefined) return fallback;
+  if (!/^\d+$/.test(raw)) return fallback;
   const value = Number(raw);
-  return Number.isSafeInteger(value) && value >= 1 && value <= MAX_CLEF_TIMEOUT_MS ? value : DEFAULT_CLEF_TIMEOUT_MS;
+  return Number.isSafeInteger(value) && value >= 1 && value <= MAX_CLEF_TIMEOUT_MS ? value : fallback;
 }
 
 export function safeState(action: AgentAction, intent: string): string | null {
-  const state = JSON.stringify({ kind: action.kind, tool: action.tool, target: action.target, content: action.content, userIntent: intent }).slice(0, 1500);
+  const state = JSON.stringify({ kind: action.kind, tool: action.tool, target: action.target, content: action.content, userIntent: intent });
+  const inspection = `${action.tool}\n${action.target}\n${action.content}\n${intent}`;
   // Conservative: no external model receives possible credentials, canaries, or env-file content.
-  if (scanWardenCanaries(state).length || /(?:bearer\s+\S+|(?:token|secret|password|api[_-]?key)\s*[=:]\s*\S+|(?:ghp_|github_pat_|sk-|npm_)[\w-]{12,}|\.env(?:\b|\.)|\.npmrc\b|private[ _-]?key)/i.test(state)) return null;
-  return state;
+  if (scanWardenCanaries(inspection).length || /(?:bearer\s+\S+|(?:token|secret|password|api[_-]?key)["']?\s*[=:]\s*\S+|(?:ghp_|github_pat_|sk-|npm_)[\w-]{12,}|\.env(?:\b|\.)|\.npmrc\b|private[ _-]?key)/i.test(inspection)) return null;
+  // Gate the complete input before truncation; remove URL paths, credentials, and queries.
+  return state.replace(/https?:\/\/[^\s"\\]+/gi, (url) => {
+    try { return new URL(url).origin; } catch { return "[URL]"; }
+  }).slice(0, 1500);
 }
 
 export function heuristic(action: AgentAction, intent: string): RiskQuestions {
@@ -63,7 +71,10 @@ export function noisyOr(values: RiskQuestions): number {
   return 1 - keys.reduce((product, key) => product * (1 - values[key]), 1);
 }
 
-export function budgetIncrement(p: number, kind: AgentAction["kind"]): number {
+export function budgetIncrement(p: number, kind: AgentAction["kind"], backend: RiskBackend = "heuristic"): number {
+  // Cloudflare's structural proxy has a low baseline; do not accumulate that noise.
+  // Keep the raw score visible and retain small-signal detection on other backends.
+  if (backend === "cloudflare" && p <= CLOUDFLARE_NOISE_FLOOR) return 0;
   return -Math.log1p(-Math.min(0.95, Math.max(0, p))) * (kind === "read" ? 0.2 : 1);
 }
 
@@ -128,10 +139,11 @@ export class RiskScorer {
       const remaining = deadline - performance.now();
       if (remaining <= 0) break;
       try {
-        // Remote provider receives only structural signals, never free-form action/intent text.
+        // Structural-only by default. Explicit opt-in adds only a gated, redacted excerpt.
         const body = candidate.backend === "cloudflare" ? { model: payload.model, questions: payload.questions, state: JSON.stringify({ kind: action.kind,
           untrusted: action.untrustedInput, heuristic: heuristic(action, intent),
-          toolClass: /(?:shell|command|terminal)/i.test(action.tool) ? "shell" : "tool" }) } : payload;
+          toolClass: /(?:shell|command|terminal)/i.test(action.tool) ? "shell" : "tool",
+          ...(this.env.WARDEN_CLOUDFLARE_SEND_SAFE_STATE === "1" && state ? { safeState: state } : {}) }) } : payload;
         const response = await bounded(
           this.transport(candidate.url, { method: "POST", headers: candidate.headers, body: JSON.stringify(body),
             redirect: "error", signal: AbortSignal.timeout(Math.max(1, Math.floor(remaining))) }),

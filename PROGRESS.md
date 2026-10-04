@@ -49,6 +49,8 @@ Segments 00–08 and the three-part offline demo are integrated. The fresh-insta
 
 ## Segment 04 and sandbox evidence result
 
+- Cloudflare usability fix: 1000 ms provider default (local 350 ms), `.env` timeout override support, Cloudflare-only combined p <= 0.30 budget noise floor, and explicit `WARDEN_CLOUDFLARE_SEND_SAFE_STATE=1` gated excerpt opt-in. Raw model scores stay visible; guardrails and heuristic/Ollama accumulation are unchanged. Existing budgets are not reset.
+
 - Four CLEF `noul` probability questions combine with noisy-OR; per-session budget adds `-ln(1-p)` (reads weighted 0.2). Ask at 1.2; block at 2.3; reads never block on budget alone. Existing specific findings provide the reason instead of budget.
 - Configured Cloudflare REST clef-flash first, then offline heuristic on failure; local Ollama `/v1/systemone` is optional only when `WARDEN_ENABLE_OLLAMA=1` and Cloudflare is absent. The default hook budget is 350 ms. Cloudflare receives only structural signals. Backend, questions, probability, budget, and latency appear in decisions and persistence. Contract documented in `memory-bank/riskScoring.md`.
 - Schema v5 adds redacted `sandbox_runs` linked to action and decision IDs, including inspected/changed/secret/control paths, network destinations, backend, verdict, duration, and canary count; no raw script output or tokens.
@@ -75,6 +77,8 @@ Segments 00–08 and the three-part offline demo are integrated. The fresh-insta
 - Demo Part 3 performs mock-backed key rotation/verification, restores the original `AGENTS.md`, and quarantines `scripts/setup.sh`.
 
 ## Combined verification
+
+- Cloudflare correction verification (October 4, 2026): 149 tests ran, 146 passed and 3 unrelated environment-dependent tests failed (static-backend assertion with working Docker; two tests binding occupied dashboard port 8765). All new Cloudflare regressions, Docker tests, typecheck/build, and the offline attack/recovery demo pass. No existing dashboard process was stopped and no new live Cloudflare success is claimed.
 
 - Full `npm.cmd test`: 142 passed, 0 failed, 3 optional Docker tests skipped (October 4, 2026 verification after changing to Cloudflare-first scoring).
 - `npm.cmd run typecheck`: passed.

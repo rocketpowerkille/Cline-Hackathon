@@ -1,5 +1,11 @@
 # Project Progress
 
+## Cloudflare usability correction (2026-10-04)
+
+Validation: full suite ran 149 tests (146 passed, 3 failed, none skipped). New Cloudflare regressions all pass; typecheck/build and offline demo pass, including Docker-backed exfiltration blocking. The three unrelated failures are a fresh-install test hardcoding `static` despite Docker being available, and two dashboard tests unable to bind occupied port 8765. The existing dashboard process was not stopped. No new live Cloudflare inference was run.
+
+Configured Cloudflare hooks default to 1000 ms with bounded process/`.env` overrides; local default stays 350 ms. Cloudflare combined p <= 0.30 contributes no budget, with raw scores retained. Safe action/intent excerpts require explicit `WARDEN_CLOUDFLARE_SEND_SAFE_STATE=1`; sensitive input remains structural-only. Regression coverage includes 15 benign actions at p=0.2, high-risk escalation, delayed inference, and privacy gating. Existing budgets are not automatically reset.
+
 ## Current status
 
 Segments 00–08 and all three offline demo parts are integrated. Fresh-install Cline/Cursor result hooks now propagate taint across sessions; static-only execution denies when Docker cannot validate it; concurrent risk budget threshold checks are serialized. Production responder does not claim mock rotation as real.

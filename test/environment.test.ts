@@ -12,13 +12,17 @@ test("package .env loads only Cloudflare risk settings and preserves explicit va
     writeFileSync(path.join(root, ".env"), [
       "CLOUDFLARE_ACCOUNT_ID=dotenv-account",
       "CLOUDFLARE_API_TOKEN='scoped-token'",
+      "WARDEN_CLEF_TIMEOUT_MS=900",
+      "WARDEN_CLOUDFLARE_SEND_SAFE_STATE=1",
       "NPM_TOKEN=must-not-enter-warden",
       "UNRELATED=value",
       "",
     ].join("\n"), "utf8");
-    assert.deepEqual(loadRiskEnvironment(root, environment), ["CLOUDFLARE_API_TOKEN"]);
+    assert.deepEqual(loadRiskEnvironment(root, environment), ["CLOUDFLARE_API_TOKEN", "WARDEN_CLEF_TIMEOUT_MS", "WARDEN_CLOUDFLARE_SEND_SAFE_STATE"]);
     assert.equal(environment.CLOUDFLARE_ACCOUNT_ID, "explicit-account");
     assert.equal(environment.CLOUDFLARE_API_TOKEN, "scoped-token");
+    assert.equal(environment.WARDEN_CLEF_TIMEOUT_MS, "900");
+    assert.equal(environment.WARDEN_CLOUDFLARE_SEND_SAFE_STATE, "1");
     assert.equal(environment.NPM_TOKEN, undefined);
     assert.equal(environment.UNRELATED, undefined);
   } finally {

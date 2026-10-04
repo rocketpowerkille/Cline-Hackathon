@@ -98,7 +98,7 @@ export class Engine {
     if (riskEligible) {
       const intent = action.userIntent || this.store.sessionIntent(action.sessionId);
       risk = await this.stages.risk(evaluated, intent);
-      increment = budgetIncrement(risk.actionProbability, action.kind);
+      increment = budgetIncrement(risk.actionProbability, action.kind, risk.backend);
     }
     const decision = combine(findings);
     decision.risk = risk;
