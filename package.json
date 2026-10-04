@@ -19,8 +19,10 @@
     "build": "tsc -p tsconfig.build.json",
     "prepack": "npm run build",
     "demo": "tsx demo/run-demo.ts",
+    "demo:visualize": "tsx demo/visualize.ts",
     "warden": "tsx src/cli/warden.ts",
     "test": "node --import ./test/offline.mjs --import tsx --test test/**/*.test.ts",
+    "test:docker": "node test/docker-tests.mjs",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

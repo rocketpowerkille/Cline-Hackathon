@@ -403,6 +403,16 @@ warden run --only NPM_TOKEN -- npm publish
 
 ## Dashboard and incident response
 
+For optional OpenAI-backed Cline SDK response, set the following in the **Warden checkout's** `.env` (not the protected project's environment file):
+
+```dotenv
+WARDEN_RESPONDER_PROVIDER=openai-native
+WARDEN_RESPONDER_MODEL=gpt-4.1-mini
+OPENAI_API_KEY=
+```
+
+Supply your API key locally. `respond --sdk` loads only allowlisted responder configuration; process variables override the file, and `WARDEN_RESPONDER_API_KEY` overrides the selected provider's key. Ordinary hooks and scoring do not load these credentials. `openai` is normalized to the SDK's `openai-native` provider ID. Model availability and actual SDK execution must be verified with your account; deterministic mode makes no model calls. Real key rotation still requires verified provider adapters.
+
 Run `warden dashboard` from the protected repository to start a loopback-only dashboard at `127.0.0.1:8765`. Approvals and incident response require the dashboard's per-process token and matching browser origin. Exposed keys with no configured real rotation provider leave an incident **OPEN**; the default responder never treats mock rotation as real.
 
 Use `warden respond --session <id> --deterministic` for offline, fail-closed investigation and file recovery. The optional `--sdk` mode requires installing and auditing `@cline/sdk` separately. The CLI never loads mock rotation providers; the offline demo injects its mocks in-process and **must not** be used for real credentials.
@@ -448,6 +458,16 @@ npm run build
 Tests require no API keys, cloud services, or Docker. Docker-only sandbox tests skip automatically when Docker or the configured image is unavailable.
 
 ## Run the complete offline demo
+
+### Visualize every Warden capability
+
+Run `npm.cmd run demo:visualize` from the Warden checkout, then open `http://127.0.0.1:8766/capabilities`. The Capability Explorer includes 12 source-backed feature areas, guided tour, filters/search, decision pipeline, illustrative risk budget lab, replay evidence references and explicit limitations. The original executed attack replay is available at `/`. Use the on-screen recording/fullscreen controls or keyboard shortcuts: C for recording mode and F for fullscreen. This is not a live health check or an operational approval/recovery UI; OpenDots remains untouched.
+
+### Verify the Docker sandbox
+
+From the Warden checkout, run `npm.cmd run test:docker` in PowerShell (or `npm run test:docker` on Unix). This command **requires** a running Docker daemon and a cached, secret-free `node:22-alpine` image (or `WARDEN_SANDBOX_IMAGE`). It fails instead of accepting static fallback or skipping tests; it never pulls images automatically.
+
+The Docker integration tests verify shadow-only file changes, a runtime-generated `AGENTS.md` write missed by lexical matching, replacement of fake environment values with canaries, loopback-only container networking, zero effective capabilities, no-new-privileges, and engine-persisted runtime egress evidence. Fixtures use temporary repositories and fake values, not OpenDots or real credentials. In the ordinary `npm test` suite these cases skip when Docker is unavailable.
 
 From the **Warden checkout** (not the protected project), after `npm ci`, run `npm.cmd run demo` in Windows PowerShell or `npm run demo` on macOS/Linux. The demo creates temporary repositories, a loopback-only fake attacker, and fake credentials. It needs no running IDE, CLEF, or Docker daemon. On Windows it uses Git Bash when available and otherwise uses a Node fallback. It prints the location of its retained incident report; the demo's key rotation is mock-backed and is **not** evidence of rotation at a real provider.
 

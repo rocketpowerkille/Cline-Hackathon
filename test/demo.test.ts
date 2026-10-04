@@ -6,11 +6,14 @@ import { parseDemoArgs, runDemo } from "../demo/run-demo.js";
 import { readDashboard } from "../src/dashboard/data.js";
 
 test("demo proves the leak, blocks it, and rotates/restores/quarantines offline", async () => {
-  const result = await runDemo({ color: false, print: () => {}, forceNodeFallback: true });
+  const output: string[] = [];
+  const result = await runDemo({ color: false, print: (line) => output.push(line), forceNodeFallback: true });
   try {
     assert.deepEqual(result.unprotectedReceipts, ["npm_demo_FAKE_TOKEN_not_real_12345"]);
     assert.deepEqual(result.protectedReceipts, []);
     assert.deepEqual(result.riskBackends, ["heuristic"]);
+    assert.equal(result.trace.filter((line) => line.startsWith("CLEF")).length, 1);
+    assert.ok(result.trace.some((line) => line.startsWith("CLEF") && line.includes("NOT USED — offline heuristic")));
     assert.ok(result.trace.some((line) => line.startsWith("HOLD")));
     assert.ok(result.trace.some((line) => line.startsWith("BLOCK")));
     assert.deepEqual(result.recovery.exposedKeys, ["NPM_TOKEN"]);
@@ -36,6 +39,10 @@ test("demo proves the leak, blocks it, and rotates/restores/quarantines offline"
     assert.ok(result.trace.some((line) => line.includes("AGENTS.md")));
     assert.ok(result.trace.some((line) => line.includes("GitHub issue #42")));
     assert.ok(!result.trace.some((line) => line.includes("get_issue github/get_issue")));
+    const headings = output.filter((line) => line.startsWith("STATUS"));
+    assert.equal(headings.length, 3);
+    assert.ok(headings.every((line) => /STATUS\s+ACTOR\s+ACTION\s+RISK\s+DETAIL/.test(line)));
+    assert.ok(result.trace.find((line) => line.startsWith("QUARANTINE"))?.includes(" RESPONDER  scripts/setup.sh"));
     assert.match(result.replayFile, /replay-actions\.json$/);
   } finally {
     rmSync(result.protectedRoot, { recursive: true, force: true });

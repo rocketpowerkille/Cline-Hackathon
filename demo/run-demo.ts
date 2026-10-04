@@ -19,6 +19,7 @@ import { MemorySecretStore, SecretVault } from "../src/vault/secrets.js";
 import { startDashboard, type DashboardServer } from "../src/dashboard/server.js";
 
 const FAKE_TOKEN = "npm_demo_FAKE_TOKEN_not_real_12345";
+const columns = { status: 10, actor: 10, action: 32, risk: 16 } as const;
 const colors = {
   reset: "\u001b[0m",
   dim: "\u001b[2m",
@@ -84,12 +85,18 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
   let riskBudget = 0;
   let riskSession = "";
   const pause = options.pause ?? waitForEnter;
+  const row = (status: string, actor: string, action: string, risk: string, detail: string) =>
+    `${status.padEnd(columns.status)} ${actor.padEnd(columns.actor)} ${action.padEnd(columns.action)} ${risk.padEnd(columns.risk)} ${detail}`;
+  const showColumns = () => {
+    const heading = row("STATUS", "ACTOR", "ACTION", "RISK", "DETAIL");
+    print(useColor ? `${colors.dim}${heading}${colors.reset}` : heading);
+  };
   const say = async (status: string, color: keyof typeof colors, actor: string, action: string, detail: string) => {
-    const label = status.toUpperCase().padEnd(10);
+    const label = status.toUpperCase();
     const budget = riskSession ? `R[${riskSession}]=${riskBudget.toFixed(2)}` : "";
-    const plain = `${label} ${actor.padEnd(10)} ${action.padEnd(32)} ${budget.padEnd(16)} ${detail}`;
+    const plain = row(label, actor, action, budget, detail);
     trace.push(plain);
-    print(useColor ? `${colors[color]}${label}${colors.reset} ${colors.cyan}${actor.padEnd(10)}${colors.reset} ${action.padEnd(32)} ${budget.padEnd(16)} ${colors.dim}${detail}${colors.reset}` : plain);
+    print(useColor ? `${colors[color]}${label.padEnd(columns.status)}${colors.reset} ${colors.cyan}${actor.padEnd(columns.actor)}${colors.reset} ${action.padEnd(columns.action)} ${budget.padEnd(columns.risk)} ${colors.dim}${detail}${colors.reset}` : plain);
     if (options.lineDelayMs) await delay(options.lineDelayMs);
   };
   let completed = false;
@@ -104,6 +111,7 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
   try {
     if (options.step) await pause("Press Enter to start Part 1: the unprotected attack.");
     print("\n=== PART 1 — WITHOUT WARDEN ===");
+    showColumns();
     const unsafe = resolveReplay(template, unsafeRoot, attacker.url);
     setupRepository(unsafeRoot, unsafe, false);
     const build = await runProcess(npmCommand(), ["run", "build"], unsafeRoot);
@@ -127,6 +135,7 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
     attacker.reset();
     if (options.step) await pause("Press Enter for Part 2: Warden protection.");
     print("\n=== PART 2 — WITH WARDEN ===");
+    showColumns();
     const protectedReplay = resolveReplay(template, protectedRoot, attacker.url);
     setupRepository(protectedRoot, protectedReplay, true);
     const demo = createDemoEngine(protectedRoot);
@@ -139,13 +148,23 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
     }
     riskSession = "cursor";
     const steps = new Map(protectedReplay.steps.map((step) => [step.id, step]));
+    let backendShown = false;
+    const showBackend = async (backend: string) => {
+      demo.verifyBackend(backend);
+      if (backendShown || backend === "none") return;
+      backendShown = true;
+      const used = backend === "cloudflare" || backend === "ollama";
+      const detail = backend === "cloudflare" ? "USED — Cloudflare clef-flash"
+        : backend === "ollama" ? "USED — local clef-flash" : "NOT USED — offline heuristic";
+      await say("CLEF", used ? "green" : "yellow", "WARDEN", "risk scoring backend", detail);
+    };
 
     await replayHook(steps.get("cursor-intent")!, protectedRoot, demo.normal);
     await replayHook(steps.get("cursor-issue")!, protectedRoot, demo.normal);
     let decision = latestDecision(demo.dbPath);
     riskBudget = decision.budget;
     assert.ok(decision.labels.includes("trust:injection-attempt"));
-    demo.verifyBackend(decision.backend);
+    await showBackend(decision.backend);
     await say("FLAG", "magenta", "CURSOR", "read GitHub issue #42", "injection detected; session tainted");
 
     let output;
@@ -162,7 +181,7 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
       output = await replayHook(steps.get("cursor-agents")!, protectedRoot, demo.normal);
       decision = latestDecision(demo.dbPath);
       riskBudget = decision.budget;
-      demo.verifyBackend(decision.backend);
+      await showBackend(decision.backend);
       assert.equal(decision.verdict, "block");
       assert.ok(decision.labels.includes("approval:denied"));
       assert.equal(JSON.parse(output.stdout).permission, "deny");
@@ -173,7 +192,7 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
       decision = latestDecision(demo.dbPath);
     }
     riskBudget = decision.budget;
-    demo.verifyBackend(decision.backend);
+    await showBackend(decision.backend);
     assert.equal(JSON.parse(output.stdout).permission, "allow");
     writeFileSync(path.join(protectedRoot, "AGENTS.md"), protectedReplay.files.agentsAfter, "utf8");
     await say("ALLOW", "green", "CURSOR", "write AGENTS.md", "approved; tainted snapshot recorded");
@@ -181,7 +200,7 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
     output = await replayHook(steps.get("cursor-setup")!, protectedRoot, dashboardServer ? demo.normal : demo.approvedControlWrite);
     decision = latestDecision(demo.dbPath);
     riskBudget = decision.budget;
-    demo.verifyBackend(decision.backend);
+    await showBackend(decision.backend);
     assert.equal(JSON.parse(output.stdout).permission, "allow");
     mkdirSync(path.join(protectedRoot, "scripts"), { recursive: true });
     writeFileSync(path.join(protectedRoot, "scripts", "setup.sh"), protectedReplay.files.setup, "utf8");
@@ -193,7 +212,7 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
     output = await replayHook(steps.get("cline-vault-whoami")!, protectedRoot, demo.normal);
     decision = latestDecision(demo.dbPath);
     riskBudget = decision.budget;
-    demo.verifyBackend(decision.backend);
+    await showBackend(decision.backend);
     assert.equal(JSON.parse(output.stdout).cancel, false, "The scoped vault command must be allowed before the tainted read.");
     assert.ok(decision.labels.includes("vault:run-ticket"), "The hook must issue a command-bound vault ticket.");
     const reachedKey = demo.consumeWhoamiTicket();
@@ -221,6 +240,7 @@ export async function runDemo(options: DemoOptions = {}): Promise<DemoResult> {
 
     if (options.step) await pause("Press Enter for Part 3: deterministic recovery with a mock key provider.");
     print("\n=== PART 3 — DETERMINISTIC RECOVERY (MOCK KEY PROVIDER) ===");
+    showColumns();
     const store = new WardenStore(demo.dbPath);
     const npm = new MockKeyProvider("npm", /NPM_TOKEN/);
     let response: Awaited<ReturnType<typeof respondDeterministically>>;

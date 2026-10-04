@@ -17,6 +17,16 @@
 - `WARDEN_CLOUDFLARE_SEND_SAFE_STATE=1` explicitly permits a gated 1500-character action/intent excerpt. Structural-only stays the default; full input is screened before truncation, URL details are removed, and sensitive input omits the excerpt. Pattern filtering is not a guarantee of secrecy.
 - Regression tests cover 15 benign Cloudflare actions, meaningful-risk escalation, 500 ms inference, overrides, opt-in privacy, and secrets after the excerpt limit. Dependency-manifest edits present before this work are user-owned and preserved.
 
+### Demo, Docker and responder additions
+
+- SDK responder now loads a dedicated allowlist from the Warden package-root `.env` only for explicit `respond --sdk`. OpenAI native uses `OPENAI_API_KEY` (or responder override), provider `openai-native`, model `gpt-4.1-mini`; process variables win. Ordinary hooks/scoring still do not load responder credentials. Local `.env` configured without displaying key values; live SDK import issue remains unverified.
+
+- Expanded Demo Studio with `/capabilities`, a 12-area source-backed Capability Explorer, searchable/filterable cards, four-step diagrams, source/test references, replay evidence links, visible limitations, guided recording tour, and an illustrative risk budget lab. No operational actions or live health claims. Original replay stays at `/`; same loopback read-only server and no added dependencies.
+
+- Added `test/docker-sandbox.test.ts` and strict `npm.cmd run test:docker` launcher. Tests require actual Docker backend evidence, cover runtime writes/canaries/isolation/ledger links, and use only temporary fixtures. Ordinary tests skip if Docker is absent; explicit Docker verification fails. Updated the existing install test to accept either valid backend while still requiring a block.
+
+- Added a standalone video presentation in `demo/visualize.ts` (`npm.cmd run demo:visualize`). It executes the existing offline demo in temporary workspaces, cleans those up, and serves an in-memory evidence replay on loopback port 8766. No OpenDots files are accessed. Playback includes attack flow, chapters, stepping, speed, recording mode, and explicit mock/replay labels. The separate video guide was removed at the user's request; both visualizers remain.
+
 Segments 00–08 and the three-part offline demo are integrated. Fresh-init observation hooks, conservative no-Docker execution, serialized risk thresholds, compiled runtime, and fail-closed provider defaults were added in the hardening sweep. External host, model, Docker and real-credential checks remain pending.
 
 ## Repository state
@@ -73,6 +83,7 @@ Segments 00–08 and the three-part offline demo are integrated. Fresh-init obse
 - Part 1 proves the fake token leaks without Warden.
 - Part 2 replays real Cursor/Cline payload shapes through `runHook`; Warden carries taint across days, sandboxes the script, blocks it, and sends nothing to the attacker. Part 3 rotates a **mock** key, verifies old-key rejection, restores the original `AGENTS.md`, quarantines the malicious script, and writes a report.
 - Configured interactive demo runs skip Ollama and require persisted `cloudflare` scoring within a 10-second demo-only timeout; automated tests remain offline.
+- The demo prints one explicit `CLEF` status line after the first scored action and aligned `STATUS`, `ACTOR`, `ACTION`, `RISK`, and `DETAIL` headings for every part.
 
 ## Current decisions
 
