@@ -11,21 +11,24 @@ Implemented:
 - Cline and Cursor hook adapters
 - Deterministic guardrails
 - Trust propagation across sessions and agents
+- Risk scoring and cumulative session budgets
 - Secret vault backed by the OS keychain
 - Secret canaries and outbound canary blocking
 - Ticketed `warden run` secret injection
 - Static and optional Docker shadow sandbox
 - Guardrail-triggered live sandbox invocation
+- Persisted redacted sandbox evidence
+- Deterministic incident responder with optional restricted Cline SDK sessions
+- Local dashboard and approval service
+- Offline attack demo Parts 1 and 2
 - Windows/Linux/macOS hook installer
 - `warden doctor` and safe uninstall
 
 Still in progress:
 
-- Risk scoring and cumulative session budgets
-- Sandbox evidence persistence
-- Deterministic incident responder
-- Dashboard and human approval flow
-- Full offline attack demo
+- Dashboard approval integration inside the engine and root CLI
+- Root CLI dispatch for standalone responder/dashboard commands
+- Responder recovery in demo Part 3
 
 ## Requirements
 
@@ -187,7 +190,7 @@ Doctor also reminds you to enable Cline hooks manually.
    Add a line to AGENTS.md
    ```
 
-   The current file-hook behavior cancels a non-allowed Cline action. Dashboard approval handling is not implemented yet.
+   The current file-hook behavior cancels a non-allowed Cline action. The dashboard approval service exists, but its waiter is not yet connected to `Engine.decide`.
 
 > Cline exposes one workspace hook filename per event. If a Cline hook already exists, Warden preserves it and `warden doctor` reports the collision instead of overwriting it.
 
@@ -291,8 +294,8 @@ Real secret values are stored in the operating system keychain, not in `.warden/
 ## Important limitations
 
 - This is an in-progress hackathon MVP.
-- The dashboard and approval UI are not implemented.
-- Sandbox decisions run live, but their evidence summaries are not yet persisted in a dedicated ledger table.
+- The dashboard UI exists, but approval handoff is not yet wired into the engine/root CLI.
+- Demo Parts 1 and 2 are implemented; responder recovery is deferred to Part 3.
 - Cline Windows `.ps1` discovery should be manually verified against the installed Cline version.
 - The source-checkout installer requires `tsx`; a distributable release should compile TypeScript to JavaScript.
 - Do not use real production credentials for manual testing yet.

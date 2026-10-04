@@ -9,17 +9,17 @@
 | 04 Risk Scoring | Implemented; model/network caveats documented | Slow attack, routine workload, mock CLEF tests |
 | 05 Secret Vault | Complete | Verified in combined suite |
 | 06 Sandbox | Complete; evidence persisted in schema v5 | Redacted summary and decision linkage tested |
-| 07 Cline Responder | Not started | — |
-| 08A Dashboard | Not started | — |
+| 07 Cline Responder | Complete; root CLI/dashboard callback pending | Deterministic + restricted two-session tests passed |
+| 08A Dashboard | Complete; engine/root CLI handoff pending | Local server, approval, security, and UI tests passed |
 | 08B Install | Complete | CLI and generated-wrapper e2e passed |
 
 ## Current scope
 
-Segments 00–06 and 08B Install are implemented. Segment 04 risk scoring and schema-v5 sandbox evidence persistence are wired into the engine. Remaining priorities are Segment 07 responder and 08A Dashboard.
+Segments 00–08 are implemented across the merged tree. Demo Parts 1 and 2 prove the leak and prevention chain. Remaining integration is dashboard approval inside `Engine.decide`, root CLI dispatch for dashboard/respond, and demo Part 3 responder recovery.
 
 ## Deliberate shortcuts
 
-- `ask` still reaches hosts as cancel/deny until dashboard approvals are implemented.
+- `ask` still reaches hosts as cancel/deny until the implemented dashboard waiter is connected to `Engine.decide`.
 - Model availability and latency are bounded; live CLEF integration still needs an environment with a model installed or Cloudflare credentials. Ollama is attempted per fresh hook process, so an absent local server can add up to 350 ms per scored action.
 - Existing non-Warden Cline event files cannot be merged because Cline exposes one workspace filename per event; init preserves them and doctor reports the collision.
 - Trust visibility for dynamically generated shell paths, writes inside scripts, and broad search/list outputs is incomplete.
@@ -54,9 +54,27 @@ Segments 00–06 and 08B Install are implemented. Segment 04 risk scoring and sc
 - `warden status` and `warden score [SESSION_ID]` are separate read-only command modules and do not initialize an absent ledger or open the keychain.
 - Verified slow series: `p=0.12` asks on step 10 and blocks on step 18; normal 100-action session stayed at `p=0`, budget `0`, no asks. Tests load offline mode and use fake transport for API assertions.
 
+## Segment 07 responder result
+
+- Deterministic investigator traces trust origins, tainted files, actual vault grants, and run tickets.
+- Deterministic response rotates only granted keys, verifies old-key rejection, restores snapshots, quarantines created files, preserves later edits, and writes readable incident reports.
+- Optional Cline SDK flow uses two restricted sessions with only Warden-provided tools.
+- Standalone responder CLI exists; root `warden respond` dispatch remains pending.
+
+## Segment 08A dashboard result
+
+- Local-only authenticated dashboard, decision/session timeline, risk and sandbox evidence, approvals, and incident listing are implemented.
+- Approval resolution and waiting are implemented, but the engine and root CLI dispatcher are not connected yet.
+
+## Demo Parts 1 and 2
+
+- Without Warden, the obviously fake npm token reaches a localhost attacker.
+- With Warden, real Cursor/Cline payloads propagate taint, hold the control-file write, sandbox `scripts/setup.sh`, block execution, and deliver zero attacker requests.
+- Demo Part 3 responder recovery remains deferred.
+
 ## Combined verification
 
-- `npm.cmd test`: 99 passed, 0 failed, 3 Docker-only tests skipped.
+- `npm.cmd test`: 117 passed, 0 failed, 0 skipped.
 - `npm.cmd run typecheck`: passed.
 - `git diff --check`: passed.
 - `npm.cmd audit --omit=dev`: 0 vulnerabilities.

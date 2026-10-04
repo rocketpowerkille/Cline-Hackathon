@@ -2,7 +2,7 @@
 
 ## Current status
 
-Segments 00–06 and 08B Install are implemented. Segment 08A Dashboard remains. Sandbox invocation and redacted evidence persistence are live; broader observation remains outstanding.
+Segments 00–08 are implemented in the merged tree. Demo Parts 1 and 2 are complete. Remaining work is approval/root-CLI integration and demo Part 3 responder recovery.
 
 ## Milestones
 
@@ -13,11 +13,11 @@ Segments 00–06 and 08B Install are implemented. Segment 08A Dashboard remains.
 - [x] Segment 04 — Risk Scoring (live model integration not exercised)
 - [x] Segment 05 — Secret Vault
 - [x] Segment 06 — Sandbox (schema-v5 evidence persistence)
-- [ ] Segment 07 — Cline Responder
-- [ ] Segment 08A — Dashboard
+- [x] Segment 07 — Cline Responder (root CLI/dashboard callback pending)
+- [x] Segment 08A — Dashboard (engine/root CLI handoff pending)
 - [x] Segment 08B — Install
 - [ ] Remaining CLI integration
-- [ ] Offline demo
+- [ ] Offline demo (Parts 1–2 complete; Part 3 pending)
 
 ## What works
 
@@ -34,11 +34,15 @@ Segments 00–06 and 08B Install are implemented. Segment 08A Dashboard remains.
 - `warden init`, doctor, and uninstall pass real CLI-process tests in temporary repositories.
 - Generated Cline and Cursor wrappers pass JSON stdio process tests.
 - Root README documents installation and current limitations.
+- Deterministic responder and restricted two-session SDK flow are implemented and tested.
+- Local dashboard, approval waiter, security controls, and UI are implemented and tested.
+- Demo Parts 1–2 prove localhost exfiltration without Warden and zero attacker requests with Warden.
 
 ## Remaining work
 
-- Segment 07 responder.
-- Segment 08A Dashboard and approval flow.
+- Connect dashboard approval waiting to the engine and root CLI.
+- Dispatch standalone dashboard/respond commands from the root CLI.
+- Add responder recovery to demo Part 3.
 - Broader shell/file observation and explicit reviewed trust reset.
 - Full offline demo and remaining dashboard/responder CLI integration.
 
@@ -56,7 +60,7 @@ Segments 00–06 and 08B Install are implemented. Segment 08A Dashboard remains.
 - CLEF model requests are tested with fakes; no live Ollama/Cloudflare evaluation or calibration was done. See `riskScoring.md`.
 - Existing Cline hook files are preserved rather than composed.
 - Automated tests use an in-memory secret store; native keychain needs manual smoke tests.
-- Docker-only tests skip when Docker is unavailable.
+- Docker tests require Docker/image availability; the latest merged suite ran all Docker cases.
 - Network wrappers can be bypassed by absolute-path clients, so static detection and `--network none` remain authoritative.
 - Risk-budget read-then-write across concurrent hook processes is not strictly serializable; near-threshold races require future transactional handling.
 
@@ -79,7 +83,7 @@ Segments 00–06 and 08B Install are implemented. Segment 08A Dashboard remains.
 
 ## Verification
 
-- `npm.cmd test`: 99 passed, 0 failed, 3 Docker-only tests skipped.
+- `npm.cmd test`: 117 passed, 0 failed, 0 skipped.
 - `npm.cmd run typecheck`: passed.
 - `git diff --check`: passed.
 - `npm.cmd audit --omit=dev`: 0 vulnerabilities.

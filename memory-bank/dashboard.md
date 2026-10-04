@@ -24,5 +24,5 @@ Implemented in `src/dashboard/{approval,data,page,server}.ts`, `src/cli/dashboar
 ## Verification and remaining integration
 
 - `test/dashboard.test.ts` covers live state and taint provenance, guarded allow + single-use click, hostile origin/host/missing token/bad content-type, expiry and absent-dashboard denial, and the opt-in responder callback.
-- `npm.cmd run typecheck` passed; full `npm.cmd test` at implementation: **113 passed, 3 optional Docker skips, 0 failed**; `git diff --check` passed. The optional Docker skips are unrelated to the dashboard.
+- `npm.cmd run typecheck` passed; full merged validation: **117 passed, 0 skipped, 0 failed**; `git diff --check` passed.
 - **Not yet connected:** root CLI dispatcher, engine approval stage, actual responder callback, and installer startup instructions. The dashboard works directly via `startDashboard()` or `src/cli/dashboard.ts`'s exported `dashboard()` until the dispatcher is merged.
